@@ -1,0 +1,168 @@
+{
+  "@@locale": "vi",
+  "appName": "CodeBase",
+  "@appName": {
+    "description": "Tên ứng dụng"
+  },
+  "common_ok": "Đồng ý",
+  "common_cancel": "Hủy",
+  "common_save": "Lưu",
+  "common_delete": "Xóa",
+  "common_edit": "Chỉnh sửa",
+  "common_search": "Tìm kiếm",
+  "common_loading": "Đang tải...",
+  "common_error": "Lỗi",
+  "common_success": "Thành công",
+  "common_warning": "Cảnh báo",
+  "common_info": "Thông tin",
+  "common_yes": "Có",
+  "common_no": "Không",
+  "common_submit": "Gửi",
+  "common_back": "Quay lại",
+  "common_next": "Tiếp theo",
+  "common_skip": "Bỏ qua",
+  "common_done": "Hoàn thành",
+  "common_retry": "Thử lại",
+  "common_close": "Đóng",
+
+  "auth_login": "Đăng nhập",
+  "auth_register": "Đăng ký",
+  "auth_logout": "Đăng xuất",
+  "auth_email": "Email",
+  "auth_password": "Mật khẩu",
+  "auth_confirmPassword": "Xác nhận mật khẩu",
+  "auth_forgotPassword": "Quên mật khẩu?",
+  "auth_dontHaveAccount": "Chưa có tài khoản?",
+  "auth_alreadyHaveAccount": "Đã có tài khoản?",
+  "auth_loginSuccess": "Đăng nhập thành công",
+  "auth_loginFailed": "Đăng nhập thất bại",
+  "auth_registerSuccess": "Đăng ký thành công",
+  "auth_registerFailed": "Đăng ký thất bại",
+
+  "dashboard_title": "Bảng điều khiển",
+  "dashboard_welcome": "Chào mừng trở lại!",
+  "dashboard_stats": "Thống kê",
+
+  "profile_title": "Hồ sơ",
+  "profile_editProfile": "Chỉnh sửa hồ sơ",
+  "profile_changePassword": "Đổi mật khẩu",
+  "profile_name": "Tên",
+  "profile_phone": "Điện thoại",
+  "profile_address": "Địa chỉ",
+  "profile_updateSuccess": "Cập nhật hồ sơ thành công",
+  "profile_updateFailed": "Cập nhật hồ sơ thất bại",
+
+  "settings_title": "Cài đặt",
+  "settings_theme": "Giao diện",
+  "settings_language": "Ngôn ngữ",
+  "settings_notifications": "Thông báo",
+  "settings_about": "Giới thiệu",
+  "settings_privacy": "Chính sách bảo mật",
+  "settings_terms": "Điều khoản dịch vụ",
+  "settings_light": "Sáng",
+  "settings_dark": "Tối",
+  "settings_system": "Hệ thống",
+
+  "error_network": "Không có kết nối internet",
+  "error_timeout": "Hết thời gian chờ",
+  "error_server": "Lỗi máy chủ",
+  "error_unknown": "Đã xảy ra lỗi không xác định",
+  "error_unauthorized": "Truy cập không được phép",
+  "field_default" : "Trường này",
+  "validation_required": "{field} là bắt buộc",
+  "@validation_required": {
+    "placeholders": {
+      "field": {
+        "type": "String",
+        "default" : "Trường này"
+      }
+    }
+  },
+  "validation_emailInvalid": "Vui lòng nhập địa chỉ email hợp lệ",
+  "validation_passwordTooShort": "Mật khẩu phải có ít nhất {min} ký tự",
+  "@validation_passwordTooShort": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "validation_passwordMismatch": "Mật khẩu không khớp",
+  "validation_minLength": "{field} phải có ít nhất {min} ký tự",
+  "@validation_minLength": {
+    "placeholders": {
+      "field": {
+        "type": "String"
+      },
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "validation_maxLength": "{field} không được vượt quá {max} ký tự",
+  "@validation_maxLength": {
+    "placeholders": {
+      "field": {
+        "type": "String"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "validation_phoneInvalid": "Vui lòng nhập số điện thoại hợp lệ",
+  "validation_urlInvalid": "Vui lòng nhập URL hợp lệ",
+
+  "toast_success": "Thành công!",
+  "toast_error": "Lỗi!",
+  "toast_warning": "Cảnh báo!",
+  "toast_info": "Thông tin",
+
+  "empty_noData": "Không có dữ liệu",
+  "empty_noResults": "Không tìm thấy kết quả",
+  "empty_noNotifications": "Không có thông báo",
+  "empty_tryAgain": "Thử lại",
+
+  "error_retry": "Thử lại",
+  "error_goBack": "Quay lại",
+
+  "auth_welcomeBack": "Chào mừng trở lại",
+  "auth_loginToContinue": "Đăng nhập để tiếp tục",
+  "auth_createAccount": "Tạo tài khoản",
+  "auth_signUpToContinue": "Đăng ký để bắt đầu",
+  "auth_fullName": "Họ và tên",
+
+  "dashboard_overview": "Tổng quan",
+  "dashboard_recentActivity": "Hoạt động gần đây",
+  "dashboard_viewAll": "Xem tất cả",
+
+  "profile_personalInfo": "Thông tin cá nhân",
+  "profile_accountSettings": "Cài đặt tài khoản",
+  "profile_logout": "Đăng xuất",
+  "profile_logoutConfirm": "Bạn có chắc chắn muốn đăng xuất?",
+
+  "settings_appearance": "Giao diện",
+  "settings_general": "Chung",
+  "settings_account": "Tài khoản",
+  "settings_version": "Phiên bản",
+
+  "action_apply": "Áp dụng",
+  "action_confirm": "Xác nhận",
+  "action_discard": "Hủy bỏ",
+  "action_refresh": "Làm mới",
+  "action_filter": "Lọc",
+  "action_sort": "Sắp xếp",
+  "action_share": "Chia sẻ",
+  "action_export": "Xuất",
+  "action_import": "Nhập",
+
+  "hint_search": "Tìm kiếm",
+  "hint_email": "Nhập địa chỉ email",
+  "hint_password": "Nhập mật khẩu",
+  "hint_confirmPassword": "Nhập lại mật khẩu",
+  "hint_fullName": "Nhập họ và tên",
+  "hint_phone": "Nhập số điện thoại",
+  "hint_address": "Nhập địa chỉ",
+  "hint_theme": "Chọn giao diện",
+  "hint_language": "Chọn ngôn ngữ"
+}
