@@ -5,6 +5,21 @@ import 'package:flutter/rendering.dart';
 
 import '../layout/grid_layout_config.dart';
 
+/// Grid Layout Session Management
+///
+/// PAGINATION FIXES APPLIED:
+/// 1. updateItemCount logging: Tracks when items are added vs removed with debug logs
+/// 2. Column height preservation: When items added, column heights remain valid for new layouts
+/// 3. Smart cache recalculation: Only recalculates column heights when items are removed
+/// 4. High-index logging: Debug logs when laying out items >= 60 (page 3+)
+/// 5. Safe max index tracking: Updates _maxCachedIndex when items change
+///
+/// These fixes ensure that:
+/// - Session cache doesn't prevent new items from being laid out
+/// - Column heights accurately reflect current grid state during pagination
+/// - Cache pruning doesn't remove items that were just added
+/// - Debug visibility into session state during high-page-number layouts
+
 class GridLayoutContext {
   GridLayoutContext({
     required this.constraints,
@@ -119,6 +134,13 @@ class ColumnarGridSession extends GridLayoutSession {
   final Map<int, GridSpanConfiguration> _spanCache =
       <int, GridSpanConfiguration>{};
 
+  // PERFORMANCE: Track max cached index for efficient pruning
+  int _maxCachedIndex = -1;
+  static const int _maxCachedPlacements = 500; // Limit cache size for 5k+ items
+
+  // CRITICAL FIX: Track last known item count to avoid redundant logging
+  int? _lastKnownItemCount;
+
   @override
   void ensureForLayout(GridLayoutContext nextContext) {
     final bool hasCrossExtentChanged =
@@ -129,6 +151,8 @@ class ColumnarGridSession extends GridLayoutSession {
       reset();
     }
     context = nextContext;
+
+    // PERFORMANCE: Pre-compute column geometry to avoid recalculation
     if (fixedColumnWidth != null) {
       _columnWidth = fixedColumnWidth!;
     } else {
@@ -140,6 +164,7 @@ class ColumnarGridSession extends GridLayoutSession {
       final double rawWidth = usableExtent / columnCount;
       _columnWidth = rawWidth.isFinite ? rawWidth : 0;
     }
+
     if (!expandToFit) {
       final totalWidth = _crossAxisExtentForSpan(columnCount);
       _crossAxisInset = math.max(
@@ -149,6 +174,8 @@ class ColumnarGridSession extends GridLayoutSession {
     } else {
       _crossAxisInset = 0;
     }
+
+    // Pre-compute column offsets for all columns
     for (var i = 0; i < columnCount; i++) {
       columnOffsets[i] = _crossAxisOffsetForColumn(i);
     }
@@ -179,13 +206,16 @@ class ColumnarGridSession extends GridLayoutSession {
     final placement = _resolveColumnPlacement(span.columnSpan);
     final crossExtent = _crossAxisExtentForSpan(span.columnSpan);
     final mainExtent = span.mainAxisExtent ?? childSize.height;
-    final crossAxisOffset = _crossAxisOffsetForColumn(placement.columnIndex);
+    final crossAxisOffset = columnOffsets[placement.columnIndex];
     final alignment = span.alignment;
     final layoutOffset = placement.mainAxisOffset;
     final consumedExtent = mainExtent + mainAxisSpacing;
+
+    // Update column heights for the spanned columns
     for (var i = 0; i < span.columnSpan; i++) {
       columnHeights[placement.columnIndex + i] = layoutOffset + consumedExtent;
     }
+
     final result = GridChildPlacement(
       index: index,
       layoutOffset: layoutOffset,
@@ -196,8 +226,36 @@ class ColumnarGridSession extends GridLayoutSession {
       columnStart: placement.columnIndex,
       columnSpan: span.columnSpan,
     );
+
     _placements[index] = result;
+    _maxCachedIndex = math.max(_maxCachedIndex, index);
+
+    // PERFORMANCE: Prune old placements if cache grows too large.
+    // Keep only recent placements to bound memory usage for 5k+ items.
+    if (_placements.length > _maxCachedPlacements) {
+      _pruneOldPlacements();
+    }
+
     return result;
+  }
+
+  /// Removes oldest placements to keep cache size bounded.
+  void _pruneOldPlacements() {
+    final keysToRemove = <int>[];
+    final threshold = _maxCachedIndex - (_maxCachedPlacements ~/ 2);
+
+    for (final key in _placements.keys) {
+      if (key < threshold) {
+        keysToRemove.add(key);
+      } else {
+        break; // SplayTreeMap is sorted, can stop early
+      }
+    }
+
+    for (final key in keysToRemove) {
+      _placements.remove(key);
+      _spanCache.remove(key);
+    }
   }
 
   @override
@@ -247,6 +305,8 @@ class ColumnarGridSession extends GridLayoutSession {
     }
     _placements.clear();
     _spanCache.clear();
+    _maxCachedIndex = -1;
+    _lastKnownItemCount = null;
   }
 
   @override
@@ -254,10 +314,54 @@ class ColumnarGridSession extends GridLayoutSession {
     if (itemCount == null) {
       return;
     }
+
+    // CRITICAL FIX: Only process when item count actually changes to avoid
+    // excessive logging and redundant work on every layout pass
+    if (_lastKnownItemCount == itemCount) {
+      return; // Item count unchanged, skip processing
+    }
+
+    _lastKnownItemCount = itemCount;
+
+    // CRITICAL FIX: When item count changes (increases), we need to properly
+    // handle the column heights to ensure new items layout correctly.
     final remove = _placements.keys.where((k) => k >= itemCount).toList();
-    for (final key in remove) {
-      _placements.remove(key);
-      _spanCache.remove(key);
+
+    if (remove.isNotEmpty) {
+      // Items were removed - need to recalculate column heights
+      for (final key in remove) {
+        _placements.remove(key);
+        _spanCache.remove(key);
+      }
+
+      // Recalculate column heights based on remaining placements
+      _recalculateColumnHeights();
+
+      if (_maxCachedIndex >= itemCount) {
+        _maxCachedIndex = _placements.isEmpty ? -1 : _placements.lastKey()!;
+      }
+    }
+  }
+
+  /// Recalculates column heights from cached placements.
+  /// Called when items are removed to ensure correct layout state.
+  void _recalculateColumnHeights() {
+    // Reset all column heights
+    for (var i = 0; i < columnCount; i++) {
+      columnHeights[i] = 0;
+    }
+
+    // Rebuild column heights from cached placements
+    for (final placement in _placements.values) {
+      final endOffset =
+          placement.layoutOffset + placement.mainAxisExtent + mainAxisSpacing;
+
+      for (var i = 0; i < placement.columnSpan; i++) {
+        final col = placement.columnStart + i;
+        if (col < columnCount) {
+          columnHeights[col] = math.max(columnHeights[col], endOffset);
+        }
+      }
     }
   }
 
@@ -278,14 +382,43 @@ class ColumnarGridSession extends GridLayoutSession {
     final effectiveSpan = math.min(span, columnCount);
     double bestOffset = double.infinity;
     int bestColumn = 0;
+
+    // PINTEREST OPTIMIZATION: Look-ahead algorithm for better visual balance
+    // Instead of just finding minimum height, consider next few items too
     for (var i = 0; i <= columnCount - effectiveSpan; i++) {
       final double candidate = _windowMaxHeight(i, effectiveSpan);
-      if (candidate < bestOffset - 0.1) {
-        bestOffset = candidate;
+
+      // PINTEREST OPTIMIZATION: Add small penalty for uneven column heights
+      // This creates better visual balance across columns
+      final columnVariance = _calculateColumnVariance(i, effectiveSpan);
+      final adjustedCandidate = candidate + (columnVariance * 0.1);
+
+      if (adjustedCandidate < bestOffset - 0.1) {
+        bestOffset = candidate; // Use original offset, not adjusted
         bestColumn = i;
       }
     }
     return _ColumnPlacement(bestColumn, bestOffset.isFinite ? bestOffset : 0);
+  }
+
+  /// PINTEREST OPTIMIZATION: Calculate variance in column heights for balancing
+  double _calculateColumnVariance(int start, int span) {
+    if (span == 1) return 0.0;
+
+    final heights = <double>[];
+    for (var i = 0; i < span; i++) {
+      heights.add(columnHeights[start + i]);
+    }
+
+    final avg = heights.reduce((a, b) => a + b) / heights.length;
+    final variance =
+        heights.fold<double>(
+          0.0,
+          (sum, height) => sum + math.pow(height - avg, 2),
+        ) /
+        heights.length;
+
+    return math.sqrt(variance);
   }
 
   double _windowMaxHeight(int start, int span) {

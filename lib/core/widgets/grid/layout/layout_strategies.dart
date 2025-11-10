@@ -43,6 +43,19 @@ abstract class GridLayoutStrategy {
   BoxGridLayoutDescriptor describeBoxLayout(double crossAxisExtent);
 }
 
+/// Lightweight helper that exposes layout metadata without triggering a full
+/// layout pass. Consumers (e.g. infinite scrollers) can use the returned
+/// descriptor to estimate item heights, column widths, and spacing for
+/// prefetch heuristics.
+BoxGridLayoutDescriptor describeGridLayout(
+  GridLayoutConfig config,
+  double crossAxisExtent,
+  TextDirection direction,
+) {
+  final strategy = createLayoutStrategy(config, direction);
+  return strategy.describeBoxLayout(crossAxisExtent);
+}
+
 class BoxGridLayoutDescriptor {
   const BoxGridLayoutDescriptor({
     required this.columnCount,

@@ -6,10 +6,11 @@ A modular, high-performance infinite scrolling system that works in both Materia
 
 - `infinite_scroll.dart` – umbrella export for the widget suite.
 - `pagination_controller.dart` – load/refresh/retry logic with debouncing, deduplication, and page caching.
-- `infinite_scroll_view.dart` – renders list/grid layouts as either `ListView`/`GridView` or a `CustomScrollView` with slivers.
+- `infinite_scroll_view.dart` – renders list/advanced grid layouts as either `ListView` or `CustomScrollView` slivers.
 - `refresh_controls.dart` – material (`RefreshIndicator`) and Cupertino (`CupertinoSliverRefreshControl`) pull-to-refresh wrappers.
 - `load_more_footer.dart` – animated loading/error/end-of-list footer.
 - `performance_utils.dart` – tuning constants and helpers (`shouldTriggerLoadMore`, `resolveCacheExtent`).
+- `performance_overlay.dart` – frame timing HUD for quick jank diagnostics.
 - `separator_builder.dart` – shared separator logic so list, grid, and sliver modes stay in sync.
 - `examples/` – runnable samples for REST backends and media-heavy feeds.
 
@@ -45,20 +46,34 @@ InfiniteScrollView<MediaItem>(
   controller: mediaController,
   useSlivers: true,
   layout: InfiniteScrollLayout.grid,
+  gridConfig: InfiniteGridConfig(
+    layout: ResponsiveGridLayout(
+      breakpoints: const [
+        ResponsiveGridBreakpoint(
+          breakpoint: 480,
+          crossAxisCount: 2,
+          childAspectRatio: 0.75,
+        ),
+        ResponsiveGridBreakpoint(
+          breakpoint: 840,
+          crossAxisCount: 3,
+          childAspectRatio: 0.8,
+        ),
+      ],
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+    ),
+    animation: GridAnimationConfig.staggered(),
+  ),
   sliverAppBar: SliverAppBar(
     pinned: true,
     floating: false,
     expandedHeight: 120,
     flexibleSpace: FlexibleSpaceBar(title: const Text('Gallery')),
   ),
-  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-    crossAxisCount: 2,
-    mainAxisSpacing: 12,
-    crossAxisSpacing: 12,
-    childAspectRatio: 0.75,
-  ),
   separatorBuilder: (context, index) => const SizedBox.shrink(), // Optional row spacing cell.
   itemBuilder: (context, index, item) => MediaTile(item: item),
+  itemKeyBuilder: (item, index) => ValueKey(item.id),
 );
 ```
 
@@ -68,9 +83,31 @@ InfiniteScrollView<MediaItem>(
 - **Cache extent**: default multiplies the viewport by 1.5; increase for aggressive prefetch, reduce to save memory.
 - **Item extent**: supply when rows have fixed height to keep layout passes O(1).
 - **Separators**: implement once via `separatorBuilder`; works for list/sliver/grid. In grid mode separators render as lightweight placeholder tiles—use a `SizedBox.shrink()` to disable per row, or an animated widget to create custom dividers.
+- **Advanced grids**: plug in `AutoPlacementGridLayout`, `MasonryGridLayout`, `AsymmetricGridLayout`, or any `GridLayoutConfig` via `InfiniteGridConfig` to reuse virtualization, caching, and refresh flows.
+- **Stable recycling**: supply `itemKeyBuilder` for deterministic widget reuse and set `enableItemRepaintBoundary` to isolate heavy paint costs (enabled by default).
 - **Debounce**: raise `debounceDuration` if your backend enforces rate limits.
 - **Keep-pages**: `keepPagesInMemory` drops oldest pages to cap RAM usage (default: 6 pages).
 - **Prefetch**: use `onPageLoaded` to queue image/video thumbnail caching.
+
+## Performance & Instrumentation
+
+- Wrap demo screens with `ScrollPerformanceOverlay` to monitor build/raster time averages and jank rate without leaving the app.
+- `InfiniteScrollBenchmarkScreen` (see `lib/features/infinity_scroll/presentation/screens/infinite_scroll_benchmark_screen.dart`) exposes sliders for page size, cache extent multiplier, preload threshold, animation toggles, and HUD visibility so you can quickly profile different configurations.
+- Recommended mobile defaults:
+  - `pageSize`: 24–30 items for media-rich grids.
+  - `preloadFraction`: 0.7–0.8 (triggers the next page before reaching the end).
+  - `cacheExtent`: `viewportHeight * 1.6` for handheld devices.
+  - `keepPagesInMemory`: 6–8 to balance smooth backscrolling and memory.
+- Recommended tablet / desktop tweaks:
+  - Increase `pageSize` to 36–48 to reduce request frequency on large screens.
+  - Raise `cacheExtentMultiplier` to 2.0–2.4 and lower `preloadFraction` to ~0.6 for long viewports.
+  - Enable animations sparingly; use `GridAnimationConfig.none()` for strict performance testing.
+
+## Testing & Stress Harness
+
+- `test/core/widgets/infinite_scroll/pagination_controller_test.dart` now covers in-flight deduplication and scroll debouncing edge cases.
+- `test/core/widgets/infinite_scroll/infinite_scroll_view_test.dart` validates stable key usage when `itemKeyBuilder` is provided.
+- Use `InfiniteScrollBenchmarkScreen` for manual stress checks (5k+ dataset). Pair it with `ScrollPerformanceOverlay` to verify ≥90% frames under 16ms.
 
 ## Error & Retry
 

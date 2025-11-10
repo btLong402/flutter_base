@@ -21,7 +21,7 @@ class TextFieldDecoration {
       suffixIcon: suffixIcon,
       filled: filled,
       fillColor: filled
-          ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.2)
+          ? theme.colorScheme.surfaceContainerHighest.withOpacity(0.2)
           : Colors.transparent,
       contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
       hintStyle: theme.textTheme.bodyMedium?.copyWith(color: AppColors.hint),

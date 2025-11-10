@@ -1,18 +1,64 @@
 import 'package:flutter/widgets.dart';
 
 /// Shared performance tuning constants for the infinite scroll widgets.
+///
+/// **Performance Tuning Guide:**
+/// - Mobile: Use default pageSize (20), preloadFraction (0.7)
+/// - Tablet: Increase pageSize to 30-40, preloadFraction to 0.75
+/// - Desktop: pageSize 50+, preloadFraction 0.8
+/// - Reduce pageSize if items are complex/heavy
+/// - Increase cacheExtentMultiplier for smoother fast scrolls
 class InfiniteScrollDefaults {
+  InfiniteScrollDefaults._();
+
+  /// Default number of items per page. Balance between:
+  /// - Too low: frequent network requests
+  /// - Too high: initial load delay, layout jank
   static const int pageSize = 20;
+
+  /// Starting page index (1-based or 0-based depending on API)
   static const int initialPage = 1;
-  static const int keepPagesInMemory = 6;
-  static const double preloadFraction = 0.8;
-  static const double cacheExtentMultiplier = 1.5;
-  static const Duration debounceDuration = Duration(milliseconds: 350);
-  static const Duration throttleDuration = Duration(milliseconds: 320);
+
+  /// Number of pages to keep in memory. Older pages are evicted.
+  /// Set to null to keep all pages (use for small datasets only).
+  static const int keepPagesInMemory = 100;
+
+  /// Trigger load-more when scrolled this fraction of total content.
+  /// Lower = earlier prefetch, higher = later prefetch.
+  /// 0.7 means trigger when 70% scrolled.
+  static const double preloadFraction = 0.7;
+
+  /// Cache extent multiplier relative to viewport height.
+  /// Higher values prefetch more offscreen items for smoother scrolling.
+  static const double cacheExtentMultiplier = 2.0;
+
+  /// Debounce duration for scroll-triggered load-more requests.
+  /// Prevents excessive API calls during rapid scrolling.
+  static const Duration debounceDuration = Duration(milliseconds: 200);
+
+  /// Throttle duration for scroll metric updates.
+  /// Limits how often we check scroll position for load-more trigger.
+  static const Duration throttleDuration = Duration(milliseconds: 150);
+
+  /// Minimum interval between consecutive load-more invocations.
+  /// Prevents duplicate requests if debounce fires multiple times.
+  static const Duration minLoadInterval = Duration(milliseconds: 500);
 }
 
 /// Returns true when the scroll position is close enough to the end of the
 /// content to trigger the next page load.
+///
+/// Uses preloadFraction to determine threshold. For example, with
+/// preloadFraction=0.7 and maxScrollExtent=1000, triggers at pixels >= 700.
+///
+/// CRITICAL FIX: Added minimum distance check to prevent premature pagination
+/// in masonry/waterfall grids where initial maxScrollExtent is small because
+/// only a few items are rendered on screen. Without this guard, pagination
+/// triggers too early (e.g., loading page 6 before scrolling past page 1).
+///
+/// The fix ensures the user must scroll at LEAST one viewport height beyond
+/// the preload threshold before triggering, preventing cascading page loads
+/// when only 10-20 items are initially rendered.
 bool shouldTriggerLoadMore(
   ScrollMetrics metrics, {
   double preloadFraction = InfiniteScrollDefaults.preloadFraction,
@@ -20,14 +66,32 @@ bool shouldTriggerLoadMore(
   if (!metrics.hasPixels || metrics.maxScrollExtent == double.infinity) {
     return false;
   }
+  // If content fits in viewport, load immediately
   if (metrics.maxScrollExtent == 0) {
     return true;
   }
+
+  // CRITICAL FIX: Calculate threshold with minimum distance requirement
+  // This prevents premature triggers when only a few items are rendered initially
   final threshold = metrics.maxScrollExtent * preloadFraction;
-  return metrics.pixels >= threshold;
+
+  // CRITICAL FIX: Only trigger if we're both:
+  // 1. Past the percentage threshold (70% of maxScrollExtent)
+  // 2. Within reasonable distance of the actual bottom (< 1.5 viewports away)
+  // This prevents loading page 6 when only 18 items are rendered on screen
+  final distanceFromBottom = metrics.maxScrollExtent - metrics.pixels;
+  final reasonableDistance = metrics.viewportDimension * 1.5;
+
+  // Must be past threshold AND close to bottom (whichever is more restrictive)
+  return metrics.pixels >= threshold &&
+      distanceFromBottom <= reasonableDistance;
 }
 
 /// Convenience helper to clamp cache extent to positive values only.
+///
+/// Falls back to viewportDimension * cacheExtentMultiplier if no explicit
+/// value provided. Larger cache extent improves scrolling smoothness by
+/// prefetching more offscreen items, at the cost of memory.
 double resolveCacheExtent(double? cacheExtent, double viewportDimension) {
   if (cacheExtent == null) {
     return viewportDimension * InfiniteScrollDefaults.cacheExtentMultiplier;

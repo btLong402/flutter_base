@@ -47,6 +47,7 @@ class AdvancedGridView extends BoxScrollView {
         ? _itemBuilder
         : (context, index) =>
               animation.wrap(context, index, _itemBuilder(context, index));
+
     final SliverChildBuilderDelegate delegate = SliverChildBuilderDelegate(
       builder,
       childCount: itemCount,

@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:code_base_riverpod/core/utils/logger.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/infinite_scroll/infinite_scroll.dart';
@@ -15,10 +16,7 @@ class RestRepository {
     required int page,
     required int pageSize,
   }) async {
-    await Future<void>.delayed(
-      Duration(milliseconds: 320 + _random.nextInt(280)),
-    );
-
+    AppLogger.debug('Fetching page $page with size $pageSize');
     if (failEvery > 0 && page % failEvery == 0) {
       throw Exception('Server responded with 500 for page $page');
     }
@@ -72,11 +70,12 @@ class _RestInfiniteListExampleState extends State<RestInfiniteListExample> {
   @override
   void initState() {
     super.initState();
-    _repository = RestRepository(failEvery: 6);
+    _repository = RestRepository(failEvery: 100);
     _controller = PaginationController<Post>(
-      pageSize: 20,
-      preloadFraction: 0.75,
-      debounceDuration: const Duration(milliseconds: 320),
+      pageSize: 30,
+      preloadFraction: 0.7,
+      keepPagesInMemory: null,
+      debounceDuration: const Duration(milliseconds: 260),
       loadPage: ({required int page, required int pageSize}) =>
           _repository.fetchPosts(page: page, pageSize: pageSize),
       onPageLoaded: _repository.prefetchThumbnails,

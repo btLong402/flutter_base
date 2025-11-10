@@ -1,5 +1,8 @@
-import 'package:flutter/cupertino.dart';
+import 'dart:math' as math;
+
+import 'package:code_base_riverpod/core/widgets/grid/pinterest.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'load_more_footer.dart';
 import 'pagination_controller.dart';
@@ -8,6 +11,17 @@ import 'refresh_controls.dart';
 import 'separator_builder.dart';
 
 enum InfiniteScrollLayout { list, grid }
+
+/// Configuration for integrating the advanced grid system with
+/// [InfiniteScrollView]. Supply a [GridLayoutConfig] alongside optional
+/// animation parameters to enable fixed, responsive, masonry, asymmetric, or
+/// auto-placement grids.
+class InfiniteGridConfig {
+  const InfiniteGridConfig({required this.layout, this.animation});
+
+  final GridLayoutConfig layout;
+  final GridAnimationConfig? animation;
+}
 
 /// High-level view that renders an infinite scrolling list or grid with built-in
 /// pull-to-refresh and load-more behaviour. Supports both CustomScrollView
@@ -22,6 +36,7 @@ class InfiniteScrollView<T> extends StatefulWidget {
     this.scrollController,
     this.physics,
     this.padding,
+    this.gridConfig,
     this.gridDelegate,
     this.itemExtent,
     this.cacheExtent,
@@ -33,9 +48,21 @@ class InfiniteScrollView<T> extends StatefulWidget {
     this.sliverAppBar,
     this.semanticsLabelBuilder,
     this.refreshSemanticsLabel,
+    this.itemKeyBuilder,
+    this.enableItemRepaintBoundary = true,
+    this.enableImplicitEntranceAnimation = true,
+    this.usePinterestPhysics = false,
   }) : assert(
-         layout == InfiniteScrollLayout.grid ? gridDelegate != null : true,
-         'gridDelegate is required for grid layout',
+         layout != InfiniteScrollLayout.grid ||
+             gridDelegate != null ||
+             gridConfig != null,
+         'Provide gridConfig or gridDelegate when using grid layout',
+       ),
+       assert(
+         layout != InfiniteScrollLayout.grid ||
+             gridDelegate == null ||
+             gridConfig == null,
+         'gridDelegate and gridConfig are mutually exclusive',
        );
 
   final PaginationController<T> controller;
@@ -45,6 +72,7 @@ class InfiniteScrollView<T> extends StatefulWidget {
   final ScrollController? scrollController;
   final ScrollPhysics? physics;
   final EdgeInsetsGeometry? padding;
+  final InfiniteGridConfig? gridConfig;
   final SliverGridDelegate? gridDelegate;
   final double? itemExtent;
   final double? cacheExtent;
@@ -57,6 +85,12 @@ class InfiniteScrollView<T> extends StatefulWidget {
   final SliverAppBar? sliverAppBar;
   final String Function(T item, int index)? semanticsLabelBuilder;
   final String? refreshSemanticsLabel;
+  final Key Function(T item, int index)? itemKeyBuilder;
+  final bool enableItemRepaintBoundary;
+  final bool enableImplicitEntranceAnimation;
+
+  /// Enable Pinterest-style scroll physics for smooth, natural scrolling
+  final bool usePinterestPhysics;
 
   @override
   State<InfiniteScrollView<T>> createState() => _InfiniteScrollViewState<T>();
@@ -64,6 +98,7 @@ class InfiniteScrollView<T> extends StatefulWidget {
 
 class _InfiniteScrollViewState<T> extends State<InfiniteScrollView<T>> {
   ScrollController? _internalController;
+  bool _hasPendingControllerUpdate = false;
 
   PaginationController<T> get controller => widget.controller;
 
@@ -94,14 +129,42 @@ class _InfiniteScrollViewState<T> extends State<InfiniteScrollView<T>> {
 
   void _onControllerUpdated() {
     if (!mounted) return;
-    setState(() {});
+
+    // PERFORMANCE: Avoid setState during build or layout phase.
+    // Schedule update for post-frame to prevent "setState during build" errors
+    // and layout thrashing during rapid scroll events.
+    final scheduler = SchedulerBinding.instance;
+    final phase = scheduler.schedulerPhase;
+
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      // Safe to update immediately
+      setState(() {});
+      return;
+    }
+
+    // Already have a pending update scheduled
+    if (_hasPendingControllerUpdate) {
+      return;
+    }
+
+    _hasPendingControllerUpdate = true;
+    scheduler.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _hasPendingControllerUpdate = false;
+      setState(() {});
+    });
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
-    final metrics = notification.metrics;
-    if (notification is ScrollUpdateNotification ||
-        notification is OverscrollNotification) {
-      controller.handleScrollMetrics(metrics);
+    // PERFORMANCE FIX: Only process ScrollUpdateNotification to prevent duplicate
+    // handling. OverscrollNotification is a subclass of ScrollNotification but
+    // doesn't provide meaningful position changes for pagination triggers.
+    // Processing both causes duplicate loadMore() calls especially after page 10.
+    if (notification is ScrollUpdateNotification) {
+      controller.handleScrollMetrics(notification.metrics);
     }
     return false;
   }
@@ -118,14 +181,20 @@ class _InfiniteScrollViewState<T> extends State<InfiniteScrollView<T>> {
 
   Widget _buildListView(BuildContext context) {
     final theme = Theme.of(context);
-    final cacheExtent = resolveCacheExtent(
+    final double viewportDimension = MediaQuery.of(context).size.height;
+    final double cacheExtent = resolveCacheExtent(
       widget.cacheExtent,
-      MediaQuery.of(context).size.height,
+      viewportDimension,
     );
     final separators = SeparatorManager(builder: widget.separatorBuilder);
     final hasFooter = controller.itemCount > 0;
     final bodyCount = separators.childCount(controller.itemCount);
     final totalCount = bodyCount + (hasFooter ? 1 : 0);
+
+    debugPrint(
+      '[InfiniteScrollView] Building grid/list: itemCount=${controller.itemCount}, '
+      'totalCount=$totalCount, layout=${widget.layout}',
+    );
 
     Widget list;
     if (widget.layout == InfiniteScrollLayout.list) {
@@ -152,42 +221,73 @@ class _InfiniteScrollViewState<T> extends State<InfiniteScrollView<T>> {
               if (item == null) {
                 return const SizedBox.shrink();
               }
-              return _buildAnimatedItem(ctx, itemIndex, item);
+              return _buildItem(ctx, itemIndex, item);
             },
           );
         },
         itemCount: totalCount,
       );
     } else {
-      list = GridView.builder(
-        controller: _effectiveController,
-        physics:
-            widget.physics ??
-            const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-        padding: widget.padding,
-        cacheExtent: cacheExtent,
-        gridDelegate: widget.gridDelegate!,
-        itemBuilder: (context, index) {
-          if (hasFooter && index == totalCount - 1) {
-            return Center(child: _buildFooter(context));
-          }
-          return separators.buildChild(
-            context: context,
-            index: index,
-            itemCount: controller.itemCount,
-            itemBuilder: (ctx, itemIndex) {
-              final item = controller.itemAt(itemIndex);
-              if (item == null) {
-                return const SizedBox.shrink();
-              }
-              return _buildAnimatedItem(ctx, itemIndex, item);
-            },
-          );
-        },
-        itemCount: totalCount,
-      );
+      final InfiniteGridConfig? gridConfig = widget.gridConfig;
+      if (gridConfig != null) {
+        final bool animateItems = gridConfig.animation == null;
+        // CRITICAL FIX: Include itemCount in key to force rebuild when new items loaded
+        final Key gridKey = ValueKey<String>(
+          '${gridConfig.layout.hashCode}-$totalCount',
+        );
+        final gridCacheExtent = _gridCacheExtentFor(context, gridConfig);
+        list = AdvancedGridView.builder(
+          key: gridKey,
+          controller: _effectiveController,
+          physics:
+              widget.physics ??
+              (widget.usePinterestPhysics
+                  ? const PinterestScrollPhysics()
+                  : const BouncingScrollPhysics(
+                      parent: AlwaysScrollableScrollPhysics(),
+                    )),
+          padding: widget.padding,
+          cacheExtent: gridCacheExtent,
+          layout: gridConfig.layout,
+          animation: gridConfig.animation,
+          itemCount: totalCount,
+          itemBuilder: (context, index) {
+            return _buildGridTile(
+              context,
+              index: index,
+              totalCount: totalCount,
+              hasFooter: hasFooter,
+              separators: separators,
+              animateItems: animateItems,
+            );
+          },
+        );
+      } else {
+        list = GridView.builder(
+          controller: _effectiveController,
+          physics:
+              widget.physics ??
+              (widget.usePinterestPhysics
+                  ? const PinterestScrollPhysics()
+                  : const BouncingScrollPhysics(
+                      parent: AlwaysScrollableScrollPhysics(),
+                    )),
+          padding: widget.padding,
+          cacheExtent: cacheExtent,
+          gridDelegate: widget.gridDelegate!,
+          itemBuilder: (context, index) {
+            return _buildGridTile(
+              context,
+              index: index,
+              totalCount: totalCount,
+              hasFooter: hasFooter,
+              separators: separators,
+              animateItems: true,
+            );
+          },
+          itemCount: totalCount,
+        );
+      }
     }
 
     return MaterialRefreshWrapper(
@@ -228,6 +328,57 @@ class _InfiniteScrollViewState<T> extends State<InfiniteScrollView<T>> {
     final childCount = separators.childCount(controller.itemCount);
 
     if (widget.layout == InfiniteScrollLayout.grid) {
+      final InfiniteGridConfig? gridConfig = widget.gridConfig;
+      if (gridConfig != null) {
+        Widget buildChild(BuildContext context, int index) {
+          return separators.buildChild(
+            context: context,
+            index: index,
+            itemCount: controller.itemCount,
+            itemBuilder: (ctx, itemIndex) {
+              final item = controller.itemAt(itemIndex);
+              if (item == null) {
+                return const SizedBox.shrink();
+              }
+              return _buildItem(
+                ctx,
+                itemIndex,
+                item,
+                animate: gridConfig.animation == null,
+              );
+            },
+          );
+        }
+
+        final SliverChildBuilderDelegate delegate = SliverChildBuilderDelegate(
+          gridConfig.animation == null
+              ? buildChild
+              : (context, index) => gridConfig.animation!.wrap(
+                  context,
+                  index,
+                  buildChild(context, index),
+                ),
+          childCount: childCount,
+          addAutomaticKeepAlives: gridConfig.layout.addAutomaticKeepAlives,
+          addRepaintBoundaries: gridConfig.layout.addRepaintBoundaries,
+          addSemanticIndexes: gridConfig.layout.addSemanticIndexes,
+        );
+
+        // CRITICAL FIX: Include childCount in key to force rebuild when new items loaded
+        final AdvancedSliverGrid sliver = AdvancedSliverGrid(
+          key: ValueKey<String>('${gridConfig.layout.hashCode}-$childCount'),
+          layout: gridConfig.layout,
+          delegate: delegate,
+        );
+
+        final EdgeInsetsGeometry? padding =
+            widget.padding ?? gridConfig.layout.padding;
+        if (padding != null) {
+          return SliverPadding(padding: padding, sliver: sliver);
+        }
+        return sliver;
+      }
+
       return SliverPadding(
         padding: widget.padding ?? EdgeInsets.zero,
         sliver: SliverGrid(
@@ -242,7 +393,7 @@ class _InfiniteScrollViewState<T> extends State<InfiniteScrollView<T>> {
                   if (item == null) {
                     return const SizedBox.shrink();
                   }
-                  return _buildAnimatedItem(ctx, itemIndex, item);
+                  return _buildItem(ctx, itemIndex, item);
                 },
               );
             },
@@ -269,7 +420,7 @@ class _InfiniteScrollViewState<T> extends State<InfiniteScrollView<T>> {
                 if (item == null) {
                   return const SizedBox.shrink();
                 }
-                return _buildAnimatedItem(ctx, itemIndex, item);
+                return _buildItem(ctx, itemIndex, item);
               },
             );
           },
@@ -311,29 +462,146 @@ class _InfiniteScrollViewState<T> extends State<InfiniteScrollView<T>> {
     return child;
   }
 
-  Widget _buildAnimatedItem(BuildContext context, int index, T item) {
-    final semanticsLabel = widget.semanticsLabelBuilder?.call(item, index);
-    final child = widget.itemBuilder(context, index, item);
-    final animated = TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0.92, end: 1),
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-      builder: (context, value, child) {
-        return Opacity(
-          opacity: value.clamp(0.6, 1),
-          child: Transform.scale(
-            scale: value,
-            alignment: Alignment.center,
-            child: child,
-          ),
-        );
-      },
-      child: child,
-    );
-    if (semanticsLabel != null) {
-      return Semantics(label: semanticsLabel, child: animated);
+  double? _gridCacheExtentFor(BuildContext context, InfiniteGridConfig config) {
+    final double? explicit = widget.cacheExtent ?? config.layout.cacheExtent;
+    if (explicit != null) {
+      return explicit;
     }
-    return animated;
+    final double crossAxisExtent = _resolvedCrossAxisExtent(context, config);
+    if (!crossAxisExtent.isFinite || crossAxisExtent <= 0) {
+      return config.layout.prefetchExtent;
+    }
+    final BoxGridLayoutDescriptor descriptor = describeGridLayout(
+      config.layout,
+      crossAxisExtent,
+      Directionality.of(context),
+    );
+    final mainAxisExtent = _estimateMainAxisExtent(descriptor, crossAxisExtent);
+    if (mainAxisExtent != null &&
+        mainAxisExtent.isFinite &&
+        mainAxisExtent > 0) {
+      return mainAxisExtent * 3; // Prefetch roughly three rows worth of tiles.
+    }
+    return config.layout.prefetchExtent;
+  }
+
+  double _resolvedCrossAxisExtent(
+    BuildContext context,
+    InfiniteGridConfig config,
+  ) {
+    final EdgeInsetsGeometry combinedPadding =
+        widget.padding ?? config.layout.padding ?? EdgeInsets.zero;
+    final EdgeInsets resolved = combinedPadding.resolve(
+      Directionality.of(context),
+    );
+    final double width = MediaQuery.of(context).size.width;
+    final double crossAxisExtent = width - resolved.horizontal;
+    return math.max(crossAxisExtent, 0);
+  }
+
+  double? _estimateMainAxisExtent(
+    BoxGridLayoutDescriptor descriptor,
+    double crossAxisExtent,
+  ) {
+    final GridSpanConfiguration? span = descriptor.spanResolver(0);
+    if (span == null) {
+      return null;
+    }
+    if (span.mainAxisExtent != null && span.mainAxisExtent! > 0) {
+      return span.mainAxisExtent;
+    }
+    final double columnWidth =
+        descriptor.fixedColumnWidth ??
+        _computeFlexibleColumnWidth(descriptor, crossAxisExtent);
+    if (columnWidth <= 0) {
+      return null;
+    }
+    final int spanColumns = span.columnSpan.clamp(1, descriptor.columnCount);
+    final double totalWidth =
+        columnWidth * spanColumns +
+        descriptor.crossAxisSpacing * (spanColumns - 1);
+    if (span.aspectRatio != null && span.aspectRatio! > 0) {
+      return totalWidth / span.aspectRatio!;
+    }
+    return null;
+  }
+
+  double _computeFlexibleColumnWidth(
+    BoxGridLayoutDescriptor descriptor,
+    double crossAxisExtent,
+  ) {
+    if (descriptor.columnCount <= 0) {
+      return 0;
+    }
+    if (descriptor.fixedColumnWidth != null) {
+      return descriptor.fixedColumnWidth!;
+    }
+    final double spacing =
+        descriptor.crossAxisSpacing * math.max(descriptor.columnCount - 1, 0);
+    final double usable = math.max(0, crossAxisExtent - spacing);
+    return usable / descriptor.columnCount;
+  }
+
+  Widget _buildItem(
+    BuildContext context,
+    int index,
+    T item, {
+    bool animate = true,
+  }) {
+    final semanticsLabel = widget.semanticsLabelBuilder?.call(item, index);
+
+    // PERFORMANCE: Stable keys prevent unnecessary rebuilds during scroll.
+    // Using ValueKey with index as fallback if no custom key provided.
+    final Key itemKey =
+        widget.itemKeyBuilder?.call(item, index) ?? ValueKey<int>(index);
+
+    Widget child = widget.itemBuilder(context, index, item);
+
+    // PERFORMANCE: Lightweight entrance animation using AnimatedOpacity.
+    // Replaced heavy TweenAnimationBuilder with simpler implicit animation.
+    // Only animate on first appearance, not on rebuild.
+    if (widget.enableImplicitEntranceAnimation && animate) {
+      child = _LightweightEntranceAnimation(child: child);
+    }
+
+    // PERFORMANCE: RepaintBoundary isolates item repaints, preventing
+    // unnecessary repaints of neighboring items during animations or updates.
+    if (widget.enableItemRepaintBoundary) {
+      child = RepaintBoundary(child: child);
+    }
+
+    // Wrap with stable key to maintain item identity during scroll
+    child = KeyedSubtree(key: itemKey, child: child);
+
+    if (semanticsLabel != null) {
+      return Semantics(label: semanticsLabel, child: child);
+    }
+    return child;
+  }
+
+  Widget _buildGridTile(
+    BuildContext context, {
+    required int index,
+    required int totalCount,
+    required bool hasFooter,
+    required SeparatorManager separators,
+    required bool animateItems,
+  }) {
+    if (hasFooter && index == totalCount - 1) {
+      return Center(child: _buildFooter(context));
+    }
+    return separators.buildChild(
+      context: context,
+      index: index,
+      itemCount: controller.itemCount,
+      itemBuilder: (ctx, itemIndex) {
+        final item = controller.itemAt(itemIndex);
+        if (item == null) {
+          return const SizedBox.shrink();
+        }
+        return _buildItem(ctx, itemIndex, item, animate: animateItems);
+      },
+    );
   }
 
   Widget _buildFooter(BuildContext context) {
@@ -429,12 +697,71 @@ class _InfiniteScrollViewState<T> extends State<InfiniteScrollView<T>> {
         Text(
           'Tap to retry loading.',
           style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.error.withOpacity(0.8),
+            color: theme.colorScheme.error.withValues(alpha: 0.8),
           ),
         ),
         const SizedBox(height: 12),
         FilledButton(onPressed: controller.retry, child: const Text('Retry')),
       ],
+    );
+  }
+}
+
+/// Lightweight entrance animation for list/grid items.
+///
+/// PERFORMANCE: Uses StatefulWidget with SingleTickerProviderStateMixin
+/// for efficient animation lifecycle. Animates only opacity and scale
+/// with minimal overhead. Animation is run once on mount and disposed.
+class _LightweightEntranceAnimation extends StatefulWidget {
+  const _LightweightEntranceAnimation({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_LightweightEntranceAnimation> createState() =>
+      _LightweightEntranceAnimationState();
+}
+
+class _LightweightEntranceAnimationState
+    extends State<_LightweightEntranceAnimation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+
+    _opacity = Tween<double>(
+      begin: 0.6,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+
+    _scale = Tween<double>(
+      begin: 0.94,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+
+    // Start animation immediately on mount
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _opacity,
+      child: ScaleTransition(scale: _scale, child: widget.child),
     );
   }
 }

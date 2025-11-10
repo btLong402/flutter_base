@@ -7,8 +7,8 @@ import 'package:code_base_riverpod/core/widgets/grid/render/advanced_sliver_rend
 import 'package:code_base_riverpod/core/widgets/grid/widgets/advanced_sliver_grid.dart';
 
 void main() {
-  testWidgets('RenderSliverAdvancedGrid assigns grid parent data to children', (
-    tester,
+  testWidgets('RenderSliverAdvancedGrid coerces parent data before layout', (
+    WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -28,10 +28,10 @@ void main() {
                   return Container(
                     height: 72,
                     alignment: Alignment.center,
-                    color: Colors.indigo[(index % 8 + 1) * 100],
-                    child: Text('Tile $index'),
+                    color: Colors.primaries[index % Colors.primaries.length],
+                    child: Text('Item $index'),
                   );
-                }, childCount: 8),
+                }, childCount: 6),
               ),
             ],
           ),
@@ -42,13 +42,22 @@ void main() {
     final RenderSliverAdvancedGrid renderObject =
         tester.renderObject(find.byType(AdvancedSliverGrid))
             as RenderSliverAdvancedGrid;
-
     final RenderBox firstChild = renderObject.firstChild!;
+
+    final SliverMultiBoxAdaptorParentData originalParentData =
+        SliverMultiBoxAdaptorParentData()
+          ..index = 0
+          ..layoutOffset = 0;
+    firstChild.parentData = originalParentData;
+    renderObject.setupParentData(firstChild);
+
     expect(firstChild.parentData, isA<AdvancedSliverGridParentData>());
 
-    final SemanticsHandle semantics = tester.ensureSemantics();
+    renderObject.markNeedsLayout();
     await tester.pump();
-    semantics.dispose();
+
+    expect(renderObject.geometry, isNotNull);
+    expect(renderObject.geometry!.scrollExtent, greaterThan(0));
     expect(tester.takeException(), isNull);
   });
 }

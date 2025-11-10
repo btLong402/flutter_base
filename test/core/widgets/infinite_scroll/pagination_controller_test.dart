@@ -1,6 +1,8 @@
-import 'package:flutter_test/flutter_test.dart';
-
 import 'package:code_base_riverpod/core/widgets/infinite_scroll/pagination_controller.dart';
+import 'package:fake_async/fake_async.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -80,6 +82,76 @@ void main() {
       expect(controller.error, isNull);
       expect(controller.itemCount, 4);
       controller.dispose();
+    });
+
+    test('loadMore avoids duplicate in-flight requests', () async {
+      var requestCount = 0;
+      final controller = PaginationController<int>(
+        autoStart: false,
+        pageSize: 2,
+        loadPage: ({required int page, required int pageSize}) async {
+          requestCount++;
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          return List.generate(
+            pageSize,
+            (index) => (page - 1) * pageSize + index,
+          );
+        },
+      );
+
+      await controller.refresh();
+      expect(requestCount, 1);
+
+      controller.loadMore();
+      controller.loadMore();
+      controller.loadMore();
+
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(requestCount, 2); // first page + one load more
+      expect(controller.itemCount, 4);
+      controller.dispose();
+    });
+
+    test('handleScrollMetrics debounces load triggers', () {
+      fakeAsync((async) {
+        var loadCount = 0;
+        final controller = PaginationController<int>(
+          autoStart: false,
+          pageSize: 2,
+          debounceDuration: const Duration(milliseconds: 120),
+          loadPage: ({required int page, required int pageSize}) async {
+            loadCount++;
+            return List.generate(
+              pageSize,
+              (index) => (page - 1) * pageSize + index,
+            );
+          },
+        );
+
+        controller.refresh();
+        async.elapse(const Duration(milliseconds: 10));
+
+        final metrics = FixedScrollMetrics(
+          minScrollExtent: 0,
+          maxScrollExtent: 1000,
+          pixels: 900,
+          viewportDimension: 400,
+          axisDirection: AxisDirection.down,
+          devicePixelRatio: 1,
+        );
+
+        controller.handleScrollMetrics(metrics);
+        controller.handleScrollMetrics(metrics);
+        controller.handleScrollMetrics(metrics);
+
+        expect(loadCount, 1); // refresh already fired first page
+
+        async.elapse(const Duration(milliseconds: 200));
+
+        expect(loadCount, 2); // one loadMore triggered after debounce
+        controller.dispose();
+      });
     });
   });
 }

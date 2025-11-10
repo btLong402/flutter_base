@@ -41,7 +41,7 @@ class AdvancedSliverGrid extends SliverMultiBoxAdaptorWidget {
 class AdvancedSliverGridList extends AdvancedSliverGrid {
   AdvancedSliverGridList({
     super.key,
-    required GridLayoutConfig layout,
+    required super.layout,
     required IndexedWidgetBuilder itemBuilder,
     int? itemCount,
     GridAnimationConfig? animation,
@@ -51,7 +51,6 @@ class AdvancedSliverGridList extends AdvancedSliverGrid {
     int semanticIndexOffset = 0,
     SemanticIndexCallback semanticIndexCallback = _defaultSemanticIndexCallback,
   }) : super(
-         layout: layout,
          delegate: SliverChildBuilderDelegate(
            animation == null
                ? itemBuilder
