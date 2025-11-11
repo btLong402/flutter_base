@@ -263,19 +263,84 @@ class _BoxColumnEngine {
   }
 
   _ColumnSlot _resolveColumnPlacement(int span) {
-    double bestOffset = double.infinity;
+    double bestScore = double.infinity;
     int bestColumn = 0;
+
+    // MASONRY OPTIMIZATION: Enhanced balancing for gap-free layouts
     for (int column = 0; column <= descriptor.columnCount - span; column++) {
       final double candidate = _windowMaxHeight(column, span);
-      if (candidate < bestOffset - 0.1) {
-        bestOffset = candidate;
+      final double score = _calculatePlacementScore(column, span, candidate);
+
+      if (score < bestScore) {
+        bestScore = score;
         bestColumn = column;
       }
     }
-    if (!bestOffset.isFinite) {
-      bestOffset = 0;
+
+    final double actualOffset = _windowMaxHeight(bestColumn, span);
+    return _ColumnSlot(bestColumn, actualOffset.isFinite ? actualOffset : 0);
+  }
+
+  /// MASONRY OPTIMIZATION: Calculate placement score for balanced distribution
+  double _calculatePlacementScore(int start, int span, double windowMaxHeight) {
+    double score = windowMaxHeight;
+
+    // Penalize variance within the window
+    final variance = _calculateColumnVariance(start, span);
+    score += variance * 2.0;
+
+    // Penalize deviation from average column height
+    final avgHeight =
+        columnHeights.reduce((a, b) => a + b) / columnHeights.length;
+    final deviation = (windowMaxHeight - avgHeight).abs();
+    score += deviation * 0.5;
+
+    // Penalize gap potential with neighbors
+    final gapPotential = _calculateGapPotential(start, span, windowMaxHeight);
+    score += gapPotential * 1.5;
+
+    // Slight preference for left columns
+    score += start * 0.01;
+
+    return score;
+  }
+
+  /// Calculate variance in column heights for a window
+  double _calculateColumnVariance(int start, int span) {
+    if (span == 1) return 0.0;
+
+    final heights = <double>[];
+    for (var i = 0; i < span; i++) {
+      heights.add(columnHeights[start + i]);
     }
-    return _ColumnSlot(bestColumn, bestOffset);
+
+    final avg = heights.reduce((a, b) => a + b) / heights.length;
+    final variance =
+        heights.fold<double>(0.0, (sum, h) => sum + math.pow(h - avg, 2)) /
+        heights.length;
+
+    return math.sqrt(variance);
+  }
+
+  /// Calculate potential gaps with neighboring columns
+  double _calculateGapPotential(int start, int span, double windowMax) {
+    if (span >= descriptor.columnCount) return 0.0;
+
+    double maxGap = 0.0;
+
+    // Check left neighbor
+    if (start > 0) {
+      final leftHeight = columnHeights[start - 1];
+      maxGap = math.max(maxGap, (windowMax - leftHeight).abs());
+    }
+
+    // Check right neighbor
+    if (start + span < descriptor.columnCount) {
+      final rightHeight = columnHeights[start + span];
+      maxGap = math.max(maxGap, (windowMax - rightHeight).abs());
+    }
+
+    return maxGap;
   }
 
   double _windowMaxHeight(int start, int span) {

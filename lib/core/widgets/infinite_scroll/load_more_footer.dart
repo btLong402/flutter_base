@@ -1,6 +1,23 @@
 import 'package:flutter/material.dart';
 
-/// Animated footer that visualises load-more progress, empty states, and errors.
+/// Animated footer that visualizes load-more progress, empty states, and errors.
+///
+/// ### States & Transitions:
+/// - **Loading**: Spinner + "Loading…" text
+/// - **Error**: Error icon + "Retry" button
+/// - **End**: Checkmark + custom end label
+/// - **Hidden**: When hasMore=true and not loading
+///
+/// ### Performance:
+/// - Uses `AnimatedSwitcher` for smooth state transitions (220ms)
+/// - Keyed children prevent unnecessary rebuilds
+/// - Minimal widget tree - only visible when needed
+///
+/// ### UX Considerations:
+/// - Clear visual feedback for each state
+/// - Tappable retry action on error
+/// - Semantically accessible labels
+/// - Consistent with Material Design patterns
 class LoadMoreFooter extends StatelessWidget {
   const LoadMoreFooter({
     super.key,

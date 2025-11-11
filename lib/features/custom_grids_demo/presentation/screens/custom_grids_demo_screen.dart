@@ -174,7 +174,37 @@ class _ScenarioViewState extends State<_ScenarioView> {
                 layout: layout,
                 itemCount: items.length,
                 animation: animation,
-                itemBuilder: (context, index) => MediaTile(item: items[index]),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  // CRITICAL OPTIMIZATION: Use ValueKey to prevent widget rebuilds
+                  // when items are appended via pagination
+                  return MediaTile(
+                    key: ValueKey('media-${item.id}'),
+                    item: item,
+                  );
+                },
+                // CRITICAL OPTIMIZATION: Enable efficient child index lookup
+                // This allows Flutter to identify which widgets correspond to which
+                // data items when the list grows, preventing full rebuilds
+                findChildIndexCallback: (Key key) {
+                  if (key is ValueKey<String>) {
+                    final String valueKey = key.value;
+                    if (valueKey.startsWith('media-')) {
+                      final int? id = int.tryParse(
+                        valueKey.substring('media-'.length),
+                      );
+                      if (id != null) {
+                        // Find item index by ID
+                        for (int i = 0; i < items.length; i++) {
+                          if (items[i].id == id) {
+                            return i;
+                          }
+                        }
+                      }
+                    }
+                  }
+                  return null;
+                },
               ),
             ),
           SliverToBoxAdapter(
@@ -226,7 +256,13 @@ class _ScenarioViewState extends State<_ScenarioView> {
             padding: padding,
             child: AdvancedGridPanel.builder(
               layout: layout,
-              itemBuilder: (context, index) => MediaTile(item: subset[index]),
+              itemBuilder: (context, index) {
+                final item = subset[index];
+                return MediaTile(
+                  key: ValueKey('panel-media-${item.id}'),
+                  item: item,
+                );
+              },
               itemCount: subset.length,
               animation: animation,
             ),
@@ -247,7 +283,32 @@ class _ScenarioViewState extends State<_ScenarioView> {
           layout: layout,
           itemCount: items.length,
           animation: animation,
-          itemBuilder: (context, index) => MediaTile(item: items[index]),
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return MediaTile(
+              key: ValueKey('panel-sliver-media-${item.id}'),
+              item: item,
+            );
+          },
+          // CRITICAL OPTIMIZATION: Enable efficient child index lookup for panel sliver
+          findChildIndexCallback: (Key key) {
+            if (key is ValueKey<String>) {
+              final String valueKey = key.value;
+              if (valueKey.startsWith('panel-sliver-media-')) {
+                final int? id = int.tryParse(
+                  valueKey.substring('panel-sliver-media-'.length),
+                );
+                if (id != null) {
+                  for (int i = 0; i < items.length; i++) {
+                    if (items[i].id == id) {
+                      return i;
+                    }
+                  }
+                }
+              }
+            }
+            return null;
+          },
         ),
       ),
     ];
@@ -402,7 +463,7 @@ List<_GridScenario> _buildScenarios() {
         mainAxisSpacing: 16,
         crossAxisSpacing: 16,
       ),
-      animation: GridAnimationConfig.pinterestFadeOnly(),
+      animation: GridAnimationConfig.fadeOnly(),
     ),
     _GridScenario(
       title: 'Masonry',

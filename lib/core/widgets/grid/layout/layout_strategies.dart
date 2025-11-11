@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../internal/grid_session.dart';
 import 'grid_layout_config.dart';
 
+/// Factory function to create the appropriate layout strategy for a given configuration.
 GridLayoutStrategy createLayoutStrategy(
   GridLayoutConfig config,
   TextDirection direction,
@@ -35,11 +36,15 @@ GridLayoutStrategy createLayoutStrategy(
   );
 }
 
+/// Base interface for grid layout strategies.
 abstract class GridLayoutStrategy {
   const GridLayoutStrategy();
 
+  /// Creates a new layout session for the given context.
   GridLayoutSession startSession(GridLayoutContext context);
 
+  /// Describes the box layout without performing a full layout pass.
+  /// Useful for prefetch heuristics and estimations.
   BoxGridLayoutDescriptor describeBoxLayout(double crossAxisExtent);
 }
 
@@ -56,6 +61,7 @@ BoxGridLayoutDescriptor describeGridLayout(
   return strategy.describeBoxLayout(crossAxisExtent);
 }
 
+/// Descriptor containing layout metadata for box grids.
 class BoxGridLayoutDescriptor {
   const BoxGridLayoutDescriptor({
     required this.columnCount,
@@ -76,10 +82,14 @@ class BoxGridLayoutDescriptor {
   final double? fixedColumnWidth;
 }
 
+/// Base class for column-based grid strategies.
+/// Consolidates common logic for all columnar layouts to reduce duplication.
 abstract class _BaseColumnStrategy extends GridLayoutStrategy {
   _BaseColumnStrategy(this.direction);
+
   final TextDirection direction;
 
+  // Abstract methods that subclasses must implement
   GridSpanResolver spanResolverForIndex();
   double mainAxisSpacing();
   double crossAxisSpacing();
@@ -124,8 +134,9 @@ abstract class _BaseColumnStrategy extends GridLayoutStrategy {
   }
 }
 
+/// Fixed grid strategy - uniform columns with consistent sizing.
 class _FixedGridStrategy extends _BaseColumnStrategy {
-  _FixedGridStrategy(this.layout, TextDirection direction) : super(direction);
+  _FixedGridStrategy(this.layout, super.direction);
 
   final FixedGridLayout layout;
 
@@ -160,9 +171,9 @@ class _FixedGridStrategy extends _BaseColumnStrategy {
       layout.crossAxisCount;
 }
 
+/// Responsive grid strategy - adapts column count based on viewport width.
 class _ResponsiveGridStrategy extends _BaseColumnStrategy {
-  _ResponsiveGridStrategy(this.layout, TextDirection direction)
-    : super(direction);
+  _ResponsiveGridStrategy(this.layout, super.direction);
 
   final ResponsiveGridLayout layout;
   ResponsiveGridBreakpoint? _activeBreakpoint;
@@ -219,8 +230,9 @@ class _ResponsiveGridStrategy extends _BaseColumnStrategy {
       math.max(_resolveColumns(crossAxisExtent), layout.minCrossAxisCount);
 }
 
+/// Masonry grid strategy - waterfall layout with variable item heights.
 class _MasonryGridStrategy extends _BaseColumnStrategy {
-  _MasonryGridStrategy(this.layout, TextDirection direction) : super(direction);
+  _MasonryGridStrategy(this.layout, super.direction);
 
   final MasonryGridLayout layout;
 
@@ -254,8 +266,11 @@ class _MasonryGridStrategy extends _BaseColumnStrategy {
       return layout.columnCount!;
     }
     final double targetColumnWidth = layout.columnWidth ?? crossAxisExtent;
+
+    // MASONRY OPTIMIZATION: Ensure minimum viable column count
+    // At least 2 columns for proper masonry effect
     final available = math.max(
-      1,
+      2,
       ((crossAxisExtent + layout.crossAxisSpacing) /
               (targetColumnWidth + layout.crossAxisSpacing))
           .floor(),
@@ -264,8 +279,9 @@ class _MasonryGridStrategy extends _BaseColumnStrategy {
   }
 }
 
+/// Ratio grid strategy - maintains aspect ratio for all items.
 class _RatioGridStrategy extends _BaseColumnStrategy {
-  _RatioGridStrategy(this.layout, TextDirection direction) : super(direction);
+  _RatioGridStrategy(this.layout, super.direction);
 
   final RatioGridLayout layout;
 
@@ -294,9 +310,9 @@ class _RatioGridStrategy extends _BaseColumnStrategy {
   int resolveColumnCountForExtent(double crossAxisExtent) => layout.columnCount;
 }
 
+/// Asymmetric grid strategy - items can span multiple columns.
 class _AsymmetricGridStrategy extends _BaseColumnStrategy {
-  _AsymmetricGridStrategy(this.layout, TextDirection direction)
-    : super(direction);
+  _AsymmetricGridStrategy(this.layout, super.direction);
 
   final AsymmetricGridLayout layout;
 
@@ -323,9 +339,9 @@ class _AsymmetricGridStrategy extends _BaseColumnStrategy {
   int resolveColumnCountForExtent(double crossAxisExtent) => layout.columnCount;
 }
 
+/// Auto-placement grid strategy - automatically places items in optimal positions.
 class _AutoPlacementGridStrategy extends _BaseColumnStrategy {
-  _AutoPlacementGridStrategy(this.layout, TextDirection direction)
-    : super(direction);
+  _AutoPlacementGridStrategy(this.layout, super.direction);
 
   final AutoPlacementGridLayout layout;
 

@@ -8,6 +8,7 @@ import 'package:code_base_riverpod/core/widgets/input/app_text_input_variant.dar
 import 'package:code_base_riverpod/features/dashboard/presentation/widgets/dashboard_tile.dart';
 import 'package:code_base_riverpod/features/dashboard/presentation/widgets/custom_widget_section.dart';
 import 'package:code_base_riverpod/features/dashboard/presentation/widgets/widget_playground_panel.dart';
+import 'package:code_base_riverpod/features/feature_and_screen_intro/presentation/pages/intro_and_feature_demo.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -325,6 +326,8 @@ class DashboardScreen extends StatelessWidget {
               ],
             ),
             AppInset.customGap(24),
+            IntroAndFeatureDemo(),
+            AppInset.gapLarge,
             Text('Cards', style: theme.textTheme.titleMedium),
             AppInset.customGap(12),
             Row(
@@ -373,7 +376,7 @@ class DashboardScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
+                AppInset.gapLarge,
                 Expanded(
                   child: Card(
                     shape: RoundedRectangleBorder(

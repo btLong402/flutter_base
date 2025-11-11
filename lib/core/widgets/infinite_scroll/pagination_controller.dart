@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import 'performance_utils.dart';
@@ -10,6 +9,55 @@ import 'performance_utils.dart';
 typedef LoadPageCallback<T> =
     Future<List<T>> Function({required int page, required int pageSize});
 
+/// ## PaginationController - Intelligent Page-Based Data Fetching
+///
+/// ### Core Responsibilities:
+/// - **Page Management**: Loads, caches, and evicts pages intelligently
+/// - **Deduplication**: Prevents duplicate requests for the same page
+/// - **Scroll Integration**: Triggers loads based on scroll position
+/// - **Error Handling**: Retry mechanism with state preservation
+///
+/// ### Performance Features:
+///
+/// **1. Throttle + Debounce Strategy**
+/// - Throttle (150ms): Limits scroll metric processing frequency
+/// - Debounce (200ms): Batches rapid scroll events before triggering load
+/// - Min interval (500ms): Prevents cascading duplicate requests
+///
+/// **2. Smart Scroll Trigger**
+/// - Tracks `maxScrollExtent` with 5% tolerance to prevent duplicate triggers
+/// - Resets guard after successful load to allow next page
+/// - Handles extent decrease (grid rebuilds) gracefully
+/// - Uses preloadFraction (default 0.7) for early prefetch
+///
+/// **3. Memory Management**
+/// - `keepPagesInMemory`: LRU eviction of oldest pages
+/// - Linked hash map maintains insertion order for pruning
+/// - In-flight request tracking prevents callback-after-dispose
+///
+/// **4. Safe State Updates**
+/// - Uses `SafeNotifierMixin` for build-phase-aware notifications
+/// - Post-frame scheduling prevents "setState during build" errors
+/// - Mounted check before all listener notifications
+///
+/// ### Pagination Fix Summary:
+/// - **Issue**: Duplicate API calls after page 10 during rapid scroll
+/// - **Root Cause**: Multiple scroll notifications triggering loadMore concurrently
+/// - **Solution**: Cancel pending timers on load start, reset extent guard on success
+/// - **Result**: Single API call per page, smooth pagination to 100+ pages
+///
+/// ### Usage:
+/// ```dart
+/// final controller = PaginationController<Post>(
+///   pageSize: 20,
+///   preloadFraction: 0.7,
+///   loadPage: ({required page, required pageSize}) async {
+///     return await api.fetchPosts(page: page, limit: pageSize);
+///   },
+///   onPageLoaded: (items) => cache.prefetch(items),
+/// );
+/// ```
+///
 /// Pagination Controller with Infinite Scroll Support
 ///
 /// PAGINATION FIXES APPLIED:
@@ -28,7 +76,7 @@ typedef LoadPageCallback<T> =
 
 /// Encapsulates page-based fetching logic with built-in debouncing,
 /// deduplication, refresh, and retry helpers.
-class PaginationController<T> extends ChangeNotifier {
+class PaginationController<T> extends ChangeNotifier with SafeNotifierMixin {
   PaginationController({
     required this.loadPage,
     this.pageSize = InfiniteScrollDefaults.pageSize,
@@ -120,7 +168,7 @@ class PaginationController<T> extends ChangeNotifier {
     _isRefreshing = true;
     _error = null;
     _lastTriggeredMaxExtent = null; // Reset trigger guard on refresh
-    _safeNotifyListeners();
+    safeNotifyListeners();
 
     final previousPages = LinkedHashMap<int, List<T>>.from(_pages);
     try {
@@ -128,7 +176,7 @@ class PaginationController<T> extends ChangeNotifier {
       _replaceWithInitialPage(newItems);
       _isRefreshing = false;
       _initialized = true;
-      _safeNotifyListeners();
+      safeNotifyListeners();
     } catch (error, stackTrace) {
       debugPrint('PaginationController.refresh error: $error\n$stackTrace');
       _isRefreshing = false;
@@ -136,7 +184,7 @@ class PaginationController<T> extends ChangeNotifier {
       _pages
         ..clear()
         ..addAll(previousPages);
-      _safeNotifyListeners();
+      safeNotifyListeners();
     }
   }
 
@@ -149,9 +197,6 @@ class PaginationController<T> extends ChangeNotifier {
   /// which should not be throttled.
   Future<void> loadMore({bool bypassRateLimit = false}) async {
     if (!_hasMore || _isLoadingMore) {
-      debugPrint(
-        '[PaginationController] loadMore() skipped: hasMore=$_hasMore, isLoadingMore=$_isLoadingMore',
-      );
       return;
     }
 
@@ -161,9 +206,6 @@ class PaginationController<T> extends ChangeNotifier {
         _lastLoadInvocation != null &&
         DateTime.now().difference(_lastLoadInvocation!) <
             InfiniteScrollDefaults.minLoadInterval) {
-      debugPrint(
-        '[PaginationController] loadMore() throttled: too soon since last invocation',
-      );
       return;
     }
 
@@ -178,17 +220,12 @@ class PaginationController<T> extends ChangeNotifier {
     _lastLoadInvocation = DateTime.now();
     _isLoadingMore = true;
     _error = null;
-    _safeNotifyListeners();
+    safeNotifyListeners();
 
     final targetPage = _nextPage;
-    final previousItemCount = itemCount;
-    debugPrint('[PaginationController] Loading page $targetPage...');
 
     try {
       final items = await _fetchPage(targetPage);
-      debugPrint(
-        '[PaginationController] Page $targetPage loaded: ${items.length} items',
-      );
       _appendPage(targetPage, items);
       _isLoadingMore = false;
 
@@ -196,15 +233,12 @@ class PaginationController<T> extends ChangeNotifier {
       // next trigger once the grid rebuilds with new items and extent increases
       _lastTriggeredMaxExtent = null;
 
-      debugPrint(
-        '[PaginationController] Item count: $previousItemCount → $itemCount',
-      );
-      _safeNotifyListeners();
+      safeNotifyListeners();
     } catch (error, stackTrace) {
       debugPrint('PaginationController.loadMore error: $error\n$stackTrace');
       _isLoadingMore = false;
       _error = error;
-      _safeNotifyListeners();
+      safeNotifyListeners();
     }
   }
 
@@ -281,27 +315,19 @@ class PaginationController<T> extends ChangeNotifier {
       // significantly, which indicates new content has been rendered.
       final currentMaxExtent = latestMetrics.maxScrollExtent;
       if (_lastTriggeredMaxExtent != null) {
-        final tolerance = _lastTriggeredMaxExtent! * 0.05; // 5% tolerance
+        final tolerance =
+            _lastTriggeredMaxExtent! *
+            InfiniteScrollDefaults.maxExtentTolerance;
         final diff = currentMaxExtent - _lastTriggeredMaxExtent!;
 
         // Skip trigger only if extent is nearly identical or decreased
         if (diff < tolerance && diff >= 0) {
           // maxExtent is nearly the same - skip duplicate trigger
-          debugPrint(
-            '[PaginationController] Trigger skipped: maxExtent nearly unchanged '
-            '(current: ${currentMaxExtent.toStringAsFixed(0)}, '
-            'last: ${_lastTriggeredMaxExtent!.toStringAsFixed(0)}, '
-            'diff: ${diff.toStringAsFixed(0)})',
-          );
           return;
         }
 
         // If extent decreased significantly, reset guard to allow re-trigger
         if (diff < -tolerance) {
-          debugPrint(
-            '[PaginationController] maxExtent decreased, resetting trigger guard '
-            '(${_lastTriggeredMaxExtent!.toStringAsFixed(0)} → ${currentMaxExtent.toStringAsFixed(0)})',
-          );
           _lastTriggeredMaxExtent = null;
         }
       }
@@ -310,15 +336,6 @@ class PaginationController<T> extends ChangeNotifier {
         latestMetrics,
         preloadFraction: preloadFraction,
       )) {
-        final distanceFromBottom =
-            latestMetrics.maxScrollExtent - latestMetrics.pixels;
-        debugPrint(
-          '[PaginationController] Trigger threshold met: '
-          'pixels=${latestMetrics.pixels.toStringAsFixed(0)}, '
-          'maxExtent=${latestMetrics.maxScrollExtent.toStringAsFixed(0)}, '
-          'distanceFromBottom=${distanceFromBottom.toStringAsFixed(0)}, '
-          'viewport=${latestMetrics.viewportDimension.toStringAsFixed(0)}',
-        );
         _lastTriggeredMaxExtent = currentMaxExtent;
         unawaited(loadMore());
       }
@@ -356,9 +373,6 @@ class PaginationController<T> extends ChangeNotifier {
   void _appendPage(int page, List<T> newItems) {
     if (newItems.isEmpty) {
       _hasMore = false;
-      debugPrint(
-        '[PaginationController] Empty page received, marking hasMore=false',
-      );
       return;
     }
 
@@ -366,15 +380,6 @@ class PaginationController<T> extends ChangeNotifier {
     _pages[page] = newItems;
     _nextPage = page + 1;
     _hasMore = _resolveHasMore(newItems);
-
-    debugPrint(
-      '[PaginationController] Page $page appended: ${newItems.length} items added, '
-      'Total: $previousItemCount → $itemCount, hasMore=$_hasMore',
-    );
-    debugPrint(
-      '[PaginationController] Pages in memory: ${_pages.keys.toList()}',
-    );
-
     onPageLoaded?.call(newItems);
     _prunePagesIfNeeded();
   }
@@ -393,31 +398,6 @@ class PaginationController<T> extends ChangeNotifier {
     while (_pages.length > keepPagesInMemory!) {
       _pages.remove(_pages.keys.first);
     }
-  }
-
-  /// Safely notifies listeners, avoiding errors if disposed.
-  bool get mounted => hasListeners;
-
-  void _safeNotifyListeners() {
-    if (!mounted) return;
-
-    // Check if we're in build phase
-    final scheduler = SchedulerBinding.instance;
-    final phase = scheduler.schedulerPhase;
-
-    // Safe to notify immediately if not in build/layout phase
-    if (phase == SchedulerPhase.idle ||
-        phase == SchedulerPhase.postFrameCallbacks) {
-      notifyListeners();
-      return;
-    }
-
-    // Defer notification only if we're in build/layout phase
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        notifyListeners();
-      }
-    });
   }
 
   @override

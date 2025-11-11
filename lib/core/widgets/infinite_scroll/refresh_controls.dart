@@ -1,7 +1,35 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+/// ## Refresh Control Wrappers
+///
+/// Provides platform-appropriate pull-to-refresh implementations:
+/// - **Material**: RefreshIndicator for Android/Web/Desktop
+/// - **Cupertino**: CupertinoSliverRefreshControl for iOS (sliver-based)
+///
+/// ### Usage Patterns:
+///
+/// **Material (ListView/GridView):**
+/// ```dart
+/// MaterialRefreshWrapper(
+///   onRefresh: controller.refresh,
+///   child: ListView(...),
+/// )
+/// ```
+///
+/// **Cupertino (CustomScrollView):**
+/// ```dart
+/// CustomScrollView(
+///   slivers: [
+///     CupertinoSliverRefreshWrapper(onRefresh: controller.refresh),
+///     SliverList(...),
+///   ],
+/// )
+/// ```
+
 /// Material-style refresh control used for non-sliver lists.
+///
+/// Wraps [RefreshIndicator] with consistent styling and semantics.
 class MaterialRefreshWrapper extends StatelessWidget {
   const MaterialRefreshWrapper({
     super.key,

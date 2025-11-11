@@ -50,6 +50,7 @@ class AdvancedSliverGridList extends AdvancedSliverGrid {
     bool addSemanticIndexes = true,
     int semanticIndexOffset = 0,
     SemanticIndexCallback semanticIndexCallback = _defaultSemanticIndexCallback,
+    ChildIndexGetter? findChildIndexCallback,
   }) : super(
          delegate: SliverChildBuilderDelegate(
            animation == null
@@ -65,6 +66,9 @@ class AdvancedSliverGridList extends AdvancedSliverGrid {
            addSemanticIndexes: addSemanticIndexes,
            semanticIndexCallback: semanticIndexCallback,
            semanticIndexOffset: semanticIndexOffset,
+           // CRITICAL OPTIMIZATION: Enable efficient item identification
+           // This prevents unnecessary rebuilds when items are appended to the list
+           findChildIndexCallback: findChildIndexCallback,
          ),
        );
 

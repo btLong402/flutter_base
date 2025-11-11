@@ -1,6 +1,10 @@
 import 'dart:math';
 
 import 'package:code_base_riverpod/core/context/context_extenstion.dart';
+import 'package:code_base_riverpod/core/utils/logger.dart';
+import 'package:code_base_riverpod/core/widgets/custom_gallery_widget/animation_utils.dart';
+import 'package:code_base_riverpod/core/widgets/custom_gallery_widget/fullscreen_viewer.dart';
+import 'package:code_base_riverpod/core/widgets/custom_gallery_widget/media_viewer.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/custom_image_widget/custom_image_widget.dart';
@@ -15,7 +19,6 @@ class MediaRepository {
     required int page,
     required int pageSize,
   }) async {
-    await Future<void>.delayed(const Duration(milliseconds: 280));
     final random = Random(page);
     return List.generate(pageSize, (index) {
       final id = (page - 1) * pageSize + index + 1;
@@ -33,6 +36,12 @@ class MediaRepository {
         aspectRatio: aspectRatio,
         isFeatured: isFeatured,
         masonryHeight: masonryHeight,
+        mediaItem: GalleryMediaItem.image(
+          imageSource: CustomImageSource.network(
+            'https://picsum.photos/seed/media$id/1000/1500',
+          ),
+          heroTag: 'media-$id',
+        ),
       );
     });
   }
@@ -55,6 +64,7 @@ class MediaItem {
     this.aspectRatio,
     this.masonryHeight,
     this.isFeatured = false,
+    required this.mediaItem,
   });
 
   final int id;
@@ -67,6 +77,7 @@ class MediaItem {
   final double? aspectRatio;
   final double? masonryHeight;
   final bool isFeatured;
+  final GalleryMediaItem mediaItem;
 }
 
 class MediaInfiniteGridExample extends StatefulWidget {
@@ -87,12 +98,23 @@ class _MediaInfiniteGridExampleState extends State<MediaInfiniteGridExample> {
     super.initState();
     _controller = PaginationController<MediaItem>(
       pageSize: 30,
-      preloadFraction: 0.7,
+      preloadFraction: 0.5,
       debounceDuration: const Duration(milliseconds: 260),
       keepPagesInMemory: null, // Keep 10 pages = 300 items in memory
       loadPage: ({required int page, required int pageSize}) =>
           _repository.fetch(page: page, pageSize: pageSize),
       onPageLoaded: _repository.prefetchThumbnails,
+    );
+  }
+
+  void _handleItemTap(int index) {
+    Navigator.of(context).push(
+      buildGalleryPageRoute(
+        builder: (context) => GalleryFullscreenViewer(
+          items: _controller.items.map((item) => item.mediaItem).toList(),
+          initialIndex: index,
+        ),
+      ),
     );
   }
 
@@ -110,7 +132,7 @@ class _MediaInfiniteGridExampleState extends State<MediaInfiniteGridExample> {
     return InfiniteScrollView<MediaItem>(
       controller: _controller,
       useSlivers: true,
-      usePinterestPhysics: true, // Enable Pinterest-style scrolling
+      // usePinterestPhysics: true, // Enable Pinterest-style scrolling
       layout: InfiniteScrollLayout.grid,
       gridConfig: gridConfig,
       sliverAppBar: SliverAppBar(
@@ -154,7 +176,12 @@ class _MediaInfiniteGridExampleState extends State<MediaInfiniteGridExample> {
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       itemBuilder: (context, index, item) {
-        return MediaTile(item: item);
+        return GestureDetector(
+          onTap: () {
+            _handleItemTap(index);
+          },
+          child: MediaTile(item: item),
+        );
       },
       itemKeyBuilder: (item, index) => ValueKey('media-${item.id}'),
       semanticsLabelBuilder: (item, index) => item.title,
@@ -180,7 +207,7 @@ class _MediaInfiniteGridExampleState extends State<MediaInfiniteGridExample> {
             duration: const Duration(milliseconds: 300),
             staggerDelay: const Duration(milliseconds: 25),
           )
-        : GridAnimationConfig.pinterestFadeOnly(
+        : GridAnimationConfig.fadeOnly(
             duration: const Duration(milliseconds: 250),
           );
 

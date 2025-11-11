@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter/physics.dart';
 
 /// Pinterest-style scroll physics with smooth momentum and natural deceleration.
 ///
@@ -121,16 +122,18 @@ class PinterestScrollPhysics extends ScrollPhysics {
       return null; // Let snap behavior handle it
     }
 
-    // If velocity is very low, no simulation needed
+    // CRITICAL FIX: If velocity is very low or zero, don't create simulation
+    // This prevents unwanted automatic scrolling when user releases finger
     if (velocity.abs() < tolerance.velocity) {
       return null;
     }
 
-    // Pinterest-style friction simulation
-    return _PinterestFrictionSimulation(
-      drag: frictionFactor,
-      position: position.pixels,
-      velocity: velocity,
+    // CRITICAL FIX: Use Flutter's standard FrictionSimulation instead of custom
+    // This is more reliable and handles edge cases properly
+    return FrictionSimulation(
+      frictionFactor * 10, // Scale up for appropriate deceleration
+      position.pixels,
+      velocity,
       tolerance: tolerance,
     );
   }
@@ -163,67 +166,6 @@ class PinterestScrollPhysics extends ScrollPhysics {
 
   @override
   double get dragStartDistanceMotionThreshold => 3.5; // Slightly less sensitive
-}
-
-/// Custom friction simulation matching Pinterest's momentum curve
-class _PinterestFrictionSimulation extends Simulation {
-  _PinterestFrictionSimulation({
-    required this.drag,
-    required this.position,
-    required this.velocity,
-    required this.tolerance,
-  }) : _duration = _calculateDuration(velocity, drag, tolerance);
-
-  final double drag;
-  final double position;
-  final double velocity;
-  final Tolerance tolerance;
-  final double _duration;
-
-  static double _calculateDuration(
-    double velocity,
-    double drag,
-    Tolerance tolerance,
-  ) {
-    // Calculate duration based on deceleration
-    final deceleration = drag * velocity.sign;
-    final duration = velocity.abs() / deceleration.abs();
-    return duration;
-  }
-
-  @override
-  double x(double time) {
-    final t = time.clamp(0.0, _duration);
-
-    // Pinterest-style easing curve (custom cubic-out)
-    final progress = t / _duration;
-    final eased = 1.0 - math.pow(1.0 - progress, 3.0);
-
-    // Total distance
-    final distance = velocity * _duration * 0.5; // Average velocity over time
-
-    return position + (distance * eased * velocity.sign);
-  }
-
-  @override
-  double dx(double time) {
-    final t = time.clamp(0.0, _duration);
-
-    if (t >= _duration) {
-      return 0.0;
-    }
-
-    // Velocity decreases cubically
-    final progress = t / _duration;
-    final velocityMultiplier = math.pow(1.0 - progress, 2.0);
-
-    return velocity * velocityMultiplier;
-  }
-
-  @override
-  bool isDone(double time) {
-    return time >= _duration || dx(time).abs() < tolerance.velocity;
-  }
 }
 
 /// Scroll behavior that applies Pinterest physics to all scrollable

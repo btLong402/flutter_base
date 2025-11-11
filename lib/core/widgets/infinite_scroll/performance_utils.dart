@@ -1,4 +1,61 @@
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+
+/// ## Performance Utilities for Infinite Scroll System
+///
+/// This module provides:
+/// - **Constants**: Tuning parameters for optimal scroll performance
+/// - **Helper Functions**: Cache extent resolution, load-more trigger logic
+/// - **Mixins**: Safe notification patterns for ChangeNotifier classes
+///
+/// ### Performance Tuning Matrix:
+///
+/// | Device    | PageSize | PreloadFraction | CacheExtent | Use Case              |
+/// |-----------|----------|-----------------|-------------|-----------------------|
+/// | Mobile    | 20-24    | 0.7             | 2.0x        | Text lists, simple UI |
+/// | Mobile    | 12-16    | 0.75            | 1.8x        | Media-heavy grids     |
+/// | Tablet    | 30-40    | 0.75            | 2.2x        | Large viewports       |
+/// | Desktop   | 50+      | 0.8             | 2.5x        | Wide screens          |
+///
+/// ### Throttle/Debounce Strategy:
+/// - **Throttle (150ms)**: Process max 6-7 scroll updates/second
+/// - **Debounce (200ms)**: Wait for scroll to "settle" before checking threshold
+/// - **Min Interval (500ms)**: Absolute minimum between loadMore() calls
+///
+/// ### Constants Reference:
+/// - `maxExtentTolerance`: 5% - Prevents duplicate pagination triggers
+/// - `bottomDistanceMultiplier`: 1.5 - Viewports from bottom for load trigger
+/// - `entranceOpacity/Scale`: 0.6→1.0, 0.94→1.0 - Item entrance animation
+/// - `gridCacheExtentMultiplier`: 3.0 - Prefetch 3 rows in grid mode
+
+/// Mixin for safely notifying listeners, avoiding errors during build/dispose.
+///
+/// Consolidates duplicate notification logic found in PaginationController
+/// and InfiniteScrollView state classes.
+mixin SafeNotifierMixin on ChangeNotifier {
+  /// Whether this notifier still has active listeners (not disposed)
+  bool get mounted => hasListeners;
+
+  /// Safely notifies listeners, deferring if called during build phase
+  void safeNotifyListeners() {
+    if (!mounted) return;
+
+    final scheduler = SchedulerBinding.instance;
+    final phase = scheduler.schedulerPhase;
+
+    // Safe to notify immediately if not in build/layout phase
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      notifyListeners();
+      return;
+    }
+
+    // Defer notification if we're in build/layout phase
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) notifyListeners();
+    });
+  }
+}
 
 /// Shared performance tuning constants for the infinite scroll widgets.
 ///
@@ -43,6 +100,26 @@ class InfiniteScrollDefaults {
   /// Minimum interval between consecutive load-more invocations.
   /// Prevents duplicate requests if debounce fires multiple times.
   static const Duration minLoadInterval = Duration(milliseconds: 500);
+
+  /// Tolerance for maxScrollExtent change detection (5% of extent)
+  static const double maxExtentTolerance = 0.05;
+
+  /// Distance multiplier from bottom for load-more trigger (1.5 viewports)
+  static const double bottomDistanceMultiplier = 1.5;
+
+  /// Entrance animation opacity range
+  static const double entranceOpacityStart = 0.6;
+  static const double entranceOpacityEnd = 1.0;
+
+  /// Entrance animation scale range
+  static const double entranceScaleStart = 0.94;
+  static const double entranceScaleEnd = 1.0;
+
+  /// Entrance animation duration
+  static const Duration entranceAnimationDuration = Duration(milliseconds: 200);
+
+  /// Grid cache extent multiplier (prefetch 3 rows worth of tiles)
+  static const double gridCacheExtentMultiplier = 3.0;
 }
 
 /// Returns true when the scroll position is close enough to the end of the
@@ -78,9 +155,10 @@ bool shouldTriggerLoadMore(
   // CRITICAL FIX: Only trigger if we're both:
   // 1. Past the percentage threshold (70% of maxScrollExtent)
   // 2. Within reasonable distance of the actual bottom (< 1.5 viewports away)
-  // This prevents loading page 6 when only 18 items are rendered on screen
   final distanceFromBottom = metrics.maxScrollExtent - metrics.pixels;
-  final reasonableDistance = metrics.viewportDimension * 1.5;
+  final reasonableDistance =
+      metrics.viewportDimension *
+      InfiniteScrollDefaults.bottomDistanceMultiplier;
 
   // Must be past threshold AND close to bottom (whichever is more restrictive)
   return metrics.pixels >= threshold &&

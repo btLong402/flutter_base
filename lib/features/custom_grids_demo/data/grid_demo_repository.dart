@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:code_base_riverpod/core/widgets/custom_gallery_widget/media_viewer.dart';
+import 'package:code_base_riverpod/core/widgets/custom_image_widget/image_loader.dart';
 import 'package:flutter/material.dart';
 
 import 'package:code_base_riverpod/features/infinity_scroll/presentation/screens/media_gallery_example.dart';
@@ -60,6 +62,12 @@ class GridDemoRepository {
         aspectRatio: aspectRatio,
         masonryHeight: masonryHeight.toDouble(),
         isFeatured: isFeatured,
+        mediaItem: GalleryMediaItem.image(
+          imageSource: CustomImageSource.network(
+            'https://picsum.photos/seed/media$globalIndex/1000/1500',
+          ),
+          heroTag: 'grid-demo-$globalIndex',
+        ),
       );
     });
   }

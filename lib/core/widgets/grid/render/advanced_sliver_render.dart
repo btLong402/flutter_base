@@ -167,7 +167,7 @@ class RenderSliverAdvancedGrid extends RenderSliverMultiBoxAdaptor {
     }
     _lastKnownChildCount = childCount;
 
-    if (childCount != null && childCount == 0) {
+    if (childCount == 0) {
       collectGarbage(childCount, childCount);
       geometry = SliverGeometry.zero;
       childManager.didFinishLayout();
@@ -262,7 +262,7 @@ class RenderSliverAdvancedGrid extends RenderSliverMultiBoxAdaptor {
       }
       if (currentChild == null) {
         final int nextIndex = index + 1;
-        if (childCount != null && nextIndex >= childCount) {
+        if (nextIndex >= childCount) {
           didReachEnd = true;
           break;
         }

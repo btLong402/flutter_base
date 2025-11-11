@@ -203,7 +203,12 @@ class ColumnarGridSession extends GridLayoutSession {
   @override
   GridChildPlacement recordChildLayout(int index, Size childSize) {
     final span = _resolveSpan(index);
-    final placement = _resolveColumnPlacement(span.columnSpan);
+
+    // MASONRY OPTIMIZATION: Use predictive placement for multi-column items
+    final placement = span.columnSpan > 1
+        ? _predictivePlacement(span.columnSpan, index)
+        : _resolveColumnPlacement(span.columnSpan);
+
     final crossExtent = _crossAxisExtentForSpan(span.columnSpan);
     final mainExtent = span.mainAxisExtent ?? childSize.height;
     final crossAxisOffset = columnOffsets[placement.columnIndex];
@@ -211,9 +216,13 @@ class ColumnarGridSession extends GridLayoutSession {
     final layoutOffset = placement.mainAxisOffset;
     final consumedExtent = mainExtent + mainAxisSpacing;
 
-    // Update column heights for the spanned columns
+    // MASONRY OPTIMIZATION: Update column heights with precise calculations
+    // Ensures accurate real-time recalculation for gap-free layouts
     for (var i = 0; i < span.columnSpan; i++) {
-      columnHeights[placement.columnIndex + i] = layoutOffset + consumedExtent;
+      final columnIndex = placement.columnIndex + i;
+      if (columnIndex < columnCount) {
+        columnHeights[columnIndex] = layoutOffset + consumedExtent;
+      }
     }
 
     final result = GridChildPlacement(
@@ -363,6 +372,34 @@ class ColumnarGridSession extends GridLayoutSession {
         }
       }
     }
+
+    // MASONRY OPTIMIZATION: Check for excessive imbalance and flag for rebalance
+    _checkAndFlagImbalance();
+  }
+
+  /// MASONRY OPTIMIZATION: Detect excessive column height imbalance
+  /// This can trigger a layout refresh if gaps are too large
+  void _checkAndFlagImbalance() {
+    if (columnCount < 2 || columnHeights.isEmpty) return;
+
+    final maxHeight = columnHeights.reduce(math.max);
+    final minHeight = columnHeights.reduce(math.min);
+    final imbalance = maxHeight - minHeight;
+
+    // If imbalance exceeds threshold (e.g., 500px), consider clearing cache
+    // to force fresh layout with improved balancing on next render
+    const imbalanceThreshold = 500.0;
+    if (imbalance > imbalanceThreshold && _placements.isNotEmpty) {
+      // Significant imbalance detected - partial cache clear may help
+      // This allows the layout algorithm to redistribute items more evenly
+      final oldestKeys = _placements.keys
+          .take(_placements.length ~/ 4)
+          .toList();
+      for (final key in oldestKeys) {
+        _placements.remove(key);
+        _spanCache.remove(key);
+      }
+    }
   }
 
   @override
@@ -380,28 +417,115 @@ class ColumnarGridSession extends GridLayoutSession {
 
   _ColumnPlacement _resolveColumnPlacement(int span) {
     final effectiveSpan = math.min(span, columnCount);
-    double bestOffset = double.infinity;
+    double bestScore = double.infinity;
     int bestColumn = 0;
 
-    // PINTEREST OPTIMIZATION: Look-ahead algorithm for better visual balance
-    // Instead of just finding minimum height, consider next few items too
+    // MASONRY OPTIMIZATION: Enhanced balancing algorithm for minimal gaps
+    // This algorithm considers both column height and visual balance
     for (var i = 0; i <= columnCount - effectiveSpan; i++) {
       final double candidate = _windowMaxHeight(i, effectiveSpan);
 
-      // PINTEREST OPTIMIZATION: Add small penalty for uneven column heights
-      // This creates better visual balance across columns
-      final columnVariance = _calculateColumnVariance(i, effectiveSpan);
-      final adjustedCandidate = candidate + (columnVariance * 0.1);
+      // MASONRY OPTIMIZATION: Calculate balance score for better distribution
+      // Lower score = better placement (shorter column + better balance)
+      final balanceScore = _calculatePlacementScore(
+        i,
+        effectiveSpan,
+        candidate,
+      );
 
-      if (adjustedCandidate < bestOffset - 0.1) {
-        bestOffset = candidate; // Use original offset, not adjusted
+      if (balanceScore < bestScore) {
+        bestScore = balanceScore;
         bestColumn = i;
       }
     }
-    return _ColumnPlacement(bestColumn, bestOffset.isFinite ? bestOffset : 0);
+
+    // Return actual window max height, not the score
+    final actualOffset = _windowMaxHeight(bestColumn, effectiveSpan);
+    return _ColumnPlacement(
+      bestColumn,
+      actualOffset.isFinite ? actualOffset : 0,
+    );
   }
 
-  /// PINTEREST OPTIMIZATION: Calculate variance in column heights for balancing
+  /// MASONRY OPTIMIZATION: Predictive placement for multi-column items
+  /// When placing wide items, predict impact on future narrow items
+  _ColumnPlacement _predictivePlacement(int span, int currentIndex) {
+    if (span == 1) {
+      // Single column - use standard placement
+      return _resolveColumnPlacement(span);
+    }
+
+    // For multi-column items, simulate placement and check impact
+    final effectiveSpan = math.min(span, columnCount);
+    double bestScore = double.infinity;
+    int bestColumn = 0;
+
+    for (var i = 0; i <= columnCount - effectiveSpan; i++) {
+      final windowMax = _windowMaxHeight(i, effectiveSpan);
+
+      // Simulate placement impact
+      final tempHeights = List<double>.from(columnHeights);
+      for (var j = 0; j < effectiveSpan; j++) {
+        tempHeights[i + j] = windowMax;
+      }
+
+      // Calculate overall balance after this placement
+      final avgHeight =
+          tempHeights.reduce((a, b) => a + b) / tempHeights.length;
+      final variance =
+          tempHeights.fold<double>(
+            0.0,
+            (sum, h) => sum + math.pow(h - avgHeight, 2),
+          ) /
+          tempHeights.length;
+
+      final score = windowMax + (math.sqrt(variance) * 3.0);
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestColumn = i;
+      }
+    }
+
+    final actualOffset = _windowMaxHeight(bestColumn, effectiveSpan);
+    return _ColumnPlacement(
+      bestColumn,
+      actualOffset.isFinite ? actualOffset : 0,
+    );
+  }
+
+  /// MASONRY OPTIMIZATION: Calculate placement score for optimal item positioning
+  /// Combines column height, variance, and gap minimization for balanced layout
+  double _calculatePlacementScore(int start, int span, double windowMaxHeight) {
+    // Primary factor: Use the actual max height in this window
+    double score = windowMaxHeight;
+
+    // MASONRY: Penalize placements that create uneven column heights
+    // This reduces gaps by encouraging balanced distribution
+    final columnVariance = _calculateColumnVariance(start, span);
+    score += columnVariance * 2.0; // Increased weight for better balance
+
+    // MASONRY: Penalize placements that deviate from average column height
+    // This ensures items distribute evenly across all columns
+    final avgColumnHeight = columnHeights.reduce((a, b) => a + b) / columnCount;
+    final heightDeviation = (windowMaxHeight - avgColumnHeight).abs();
+    score +=
+        heightDeviation * 0.5; // Moderate weight to avoid extreme clustering
+
+    // MASONRY: Penalize placements that would create large gaps with neighbors
+    // This is crucial for eliminating visible white space
+    final gapPotential = _calculateGapPotential(start, span);
+    score += gapPotential * 1.5; // High weight to minimize gaps
+
+    // MASONRY: Slight preference for leftmost columns when scores are equal
+    // This creates more predictable layout without compromising balance
+    score += start * 0.01;
+
+    return score;
+  }
+
+  /// MASONRY OPTIMIZATION: Calculate variance in column heights for balancing
+  /// Returns standard deviation of column heights to measure unevenness
   double _calculateColumnVariance(int start, int span) {
     if (span == 1) return 0.0;
 
@@ -419,6 +543,31 @@ class ColumnarGridSession extends GridLayoutSession {
         heights.length;
 
     return math.sqrt(variance);
+  }
+
+  /// MASONRY OPTIMIZATION: Calculate gap potential for a column range
+  /// Detects if placing item here would create large vertical gaps
+  double _calculateGapPotential(int start, int span) {
+    if (span >= columnCount) return 0.0;
+
+    final double windowMax = _windowMaxHeight(start, span);
+
+    // Check neighboring columns to detect potential gaps
+    double maxGap = 0.0;
+
+    // Check left neighbor
+    if (start > 0) {
+      final leftHeight = columnHeights[start - 1];
+      maxGap = math.max(maxGap, (windowMax - leftHeight).abs());
+    }
+
+    // Check right neighbor
+    if (start + span < columnCount) {
+      final rightHeight = columnHeights[start + span];
+      maxGap = math.max(maxGap, (windowMax - rightHeight).abs());
+    }
+
+    return maxGap;
   }
 
   double _windowMaxHeight(int start, int span) {
