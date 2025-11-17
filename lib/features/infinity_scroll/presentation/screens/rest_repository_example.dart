@@ -74,7 +74,6 @@ class _RestInfiniteListExampleState extends State<RestInfiniteListExample> {
     _controller = PaginationController<Post>(
       pageSize: 30,
       preloadFraction: 0.7,
-      keepPagesInMemory: null,
       debounceDuration: const Duration(milliseconds: 260),
       loadPage: ({required int page, required int pageSize}) =>
           _repository.fetchPosts(page: page, pageSize: pageSize),

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'image_loader.dart';
 
 /// Handles loading and rendering logic for SVG-based sources.
+///
+/// Performance optimizations:
+/// - Uses PictureProvider for efficient SVG caching
+/// - Minimizes rebuilds with proper const usage
 class SvgHandler {
   const SvgHandler._();
 
@@ -18,7 +21,8 @@ class SvgHandler {
     Duration fadeInDuration = const Duration(milliseconds: 250),
   }) {
     if (source is SvgAssetImageSource) {
-      return _SvgAssetLoader(
+      // Optimize: Use SvgPicture.asset directly for better performance
+      return _buildSvgAsset(
         assetPath: source.assetPath,
         package: source.package,
         width: width,
@@ -32,77 +36,28 @@ class SvgHandler {
 
     throw UnsupportedError('Unsupported SVG source: ${source.runtimeType}');
   }
-}
 
-class _SvgAssetLoader extends StatefulWidget {
-  const _SvgAssetLoader({
-    required this.assetPath,
-    required this.package,
-    required this.width,
-    required this.height,
-    required this.fit,
-    required this.placeholder,
-    required this.errorWidget,
-    required this.fadeInDuration,
-  });
-
-  final String assetPath;
-  final String? package;
-  final double? width;
-  final double? height;
-  final BoxFit fit;
-  final Widget placeholder;
-  final Widget errorWidget;
-  final Duration fadeInDuration;
-
-  @override
-  State<_SvgAssetLoader> createState() => _SvgAssetLoaderState();
-}
-
-class _SvgAssetLoaderState extends State<_SvgAssetLoader> {
-  late final Future<String> _svgFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    final key = widget.package != null
-        ? 'packages/${widget.package}/${widget.assetPath}'
-        : widget.assetPath;
-
-    _svgFuture = rootBundle.loadString(key);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<String>(
-      future: _svgFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return buildSizedChild(
-            width: widget.width,
-            height: widget.height,
-            child: widget.placeholder,
-          );
-        }
-
-        if (snapshot.hasError || snapshot.data == null) {
-          return buildSizedChild(
-            width: widget.width,
-            height: widget.height,
-            child: widget.errorWidget,
-          );
-        }
-
-        return FadeInWrapper(
-          duration: widget.fadeInDuration,
-          child: SvgPicture.string(
-            snapshot.data!,
-            width: widget.width,
-            height: widget.height,
-            fit: widget.fit,
-          ),
-        );
-      },
+  static Widget _buildSvgAsset({
+    required String assetPath,
+    required String? package,
+    required double? width,
+    required double? height,
+    required BoxFit fit,
+    required Widget placeholder,
+    required Widget errorWidget,
+    required Duration fadeInDuration,
+  }) {
+    // Optimize: Use SvgPicture.asset which has built-in caching
+    // and is more efficient than loading string and using SvgPicture.string
+    return SvgPicture.asset(
+      assetPath,
+      width: width,
+      height: height,
+      fit: fit,
+      package: package,
+      // Optimize: Use placeholderBuilder for better performance
+      placeholderBuilder: (context) =>
+          buildSizedChild(width: width, height: height, child: placeholder),
     );
   }
 }

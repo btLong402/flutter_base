@@ -83,7 +83,6 @@ class PaginationController<T> extends ChangeNotifier with SafeNotifierMixin {
     this.initialPage = InfiniteScrollDefaults.initialPage,
     this.debounceDuration = InfiniteScrollDefaults.debounceDuration,
     this.preloadFraction = InfiniteScrollDefaults.preloadFraction,
-    this.keepPagesInMemory = InfiniteScrollDefaults.keepPagesInMemory,
     this.onPageLoaded,
     this.hasMoreResolver,
     this.autoStart = true,
@@ -103,7 +102,6 @@ class PaginationController<T> extends ChangeNotifier with SafeNotifierMixin {
   final int initialPage;
   final Duration debounceDuration;
   final double preloadFraction;
-  final int? keepPagesInMemory;
   final ValueChanged<List<T>>? onPageLoaded;
   final bool Function(List<T> newItems)? hasMoreResolver;
   final bool autoStart;
@@ -367,7 +365,6 @@ class PaginationController<T> extends ChangeNotifier with SafeNotifierMixin {
     _nextPage = initialPage + 1;
     _hasMore = _resolveHasMore(newItems);
     onPageLoaded?.call(newItems);
-    _prunePagesIfNeeded();
   }
 
   void _appendPage(int page, List<T> newItems) {
@@ -381,7 +378,6 @@ class PaginationController<T> extends ChangeNotifier with SafeNotifierMixin {
     _nextPage = page + 1;
     _hasMore = _resolveHasMore(newItems);
     onPageLoaded?.call(newItems);
-    _prunePagesIfNeeded();
   }
 
   bool _resolveHasMore(List<T> newItems) {
@@ -391,14 +387,6 @@ class PaginationController<T> extends ChangeNotifier with SafeNotifierMixin {
     return newItems.length >= pageSize;
   }
 
-  void _prunePagesIfNeeded() {
-    if (keepPagesInMemory == null) {
-      return;
-    }
-    while (_pages.length > keepPagesInMemory!) {
-      _pages.remove(_pages.keys.first);
-    }
-  }
 
   @override
   void dispose() {

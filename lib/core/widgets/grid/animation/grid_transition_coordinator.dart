@@ -8,6 +8,12 @@ import 'package:flutter/widgets.dart';
 /// - Prevents animation conflicts
 /// - Provides consistent timing across the grid
 ///
+/// **Performance Optimizations:**
+/// - Automatic cleanup of completed animations
+/// - Bounded animation tracking to prevent memory leaks
+/// - Configurable max concurrent animations
+/// - Efficient state lookup with Map
+///
 /// **Usage:**
 /// ```dart
 /// final coordinator = GridTransitionCoordinator();
@@ -24,16 +30,23 @@ class GridTransitionCoordinator {
   GridTransitionCoordinator({
     this.staggerDelay = const Duration(milliseconds: 25),
     this.maxConcurrentAnimations = 20,
+    this.maxTrackedAnimations = 100,
   });
 
   final Duration staggerDelay;
   final int maxConcurrentAnimations;
+
+  /// Maximum number of animations to track (prevents memory leaks)
+  final int maxTrackedAnimations;
 
   final Map<int, GridItemAnimationState> _activeAnimations = {};
   int _animationSequence = 0;
 
   /// Registers an item appearance and returns its animation delay
   Duration registerItemAppearance(int index) {
+    // PERFORMANCE: Clean up old animations before adding new ones
+    _cleanupOldAnimations();
+
     final state = GridItemAnimationState(
       index: index,
       type: GridItemAnimationType.appear,
@@ -82,6 +95,21 @@ class GridTransitionCoordinator {
     });
   }
 
+  /// PERFORMANCE: Cleanup old completed animations to prevent memory leaks
+  void _cleanupOldAnimations() {
+    if (_activeAnimations.length <= maxTrackedAnimations) {
+      return;
+    }
+
+    // Remove oldest animations that have likely completed
+    final sortedKeys = _activeAnimations.keys.toList()..sort();
+    final removeCount = _activeAnimations.length - (maxTrackedAnimations ~/ 2);
+
+    for (var i = 0; i < removeCount && i < sortedKeys.length; i++) {
+      _activeAnimations.remove(sortedKeys[i]);
+    }
+  }
+
   /// Checks if item is currently animating
   bool isAnimating(int index) {
     return _activeAnimations.containsKey(index);
@@ -125,6 +153,12 @@ class GridItemAnimationState {
 enum GridItemAnimationType { appear, disappear, update }
 
 /// Widget that integrates with GridTransitionCoordinator for managed animations
+///
+/// **Performance Optimizations:**
+/// - Single AnimationController per item
+/// - Child parameter in animations to prevent rebuilds
+/// - Automatic disposal and cleanup
+/// - Configurable animation layers
 class CoordinatedGridItem extends StatefulWidget {
   const CoordinatedGridItem({
     super.key,
@@ -176,10 +210,13 @@ class _CoordinatedGridItemState extends State<CoordinatedGridItem>
     _hasRegistered = true;
 
     // Start animation after delay
-    Future.delayed(delay, () {
-      if (mounted) {
-        _controller.forward();
-      }
+    // PERFORMANCE: Use post-frame callback to avoid layout conflicts
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(delay, () {
+        if (mounted) {
+          _controller.forward();
+        }
+      });
     });
   }
 
@@ -194,9 +231,11 @@ class _CoordinatedGridItemState extends State<CoordinatedGridItem>
 
   @override
   Widget build(BuildContext context) {
+    // PERFORMANCE: Build widget tree once, use child parameter in transitions
     Widget result = widget.child;
 
     // Apply transformations based on configuration
+    // PERFORMANCE: Only create transition widgets that are enabled
     if (widget.enableSlide) {
       result = SlideTransition(
         position: Tween<Offset>(

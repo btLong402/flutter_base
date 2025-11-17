@@ -15,7 +15,6 @@ final customGridPaginationControllerProvider =
         pageSize: 24,
         preloadFraction: 0.72,
         debounceDuration: const Duration(milliseconds: 280),
-        keepPagesInMemory: 6,
         loadPage: ({required int page, required int pageSize}) =>
             repository.fetchPage(page: page, pageSize: pageSize),
         onPageLoaded: repository.prefetchThumbnails,

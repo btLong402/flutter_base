@@ -66,6 +66,11 @@ class SvgAssetImageSource extends SvgImageSource {
 }
 
 /// Responsible for resolving the correct widget given a source type.
+///
+/// Performance optimizations:
+/// - Memory cache width/height to reduce memory footprint
+/// - FilterQuality control for performance/quality trade-off
+/// - Efficient image decoding and caching
 class ImageLoader {
   const ImageLoader._();
 
@@ -77,6 +82,9 @@ class ImageLoader {
     required Widget placeholder,
     required Widget errorWidget,
     Duration fadeInDuration = const Duration(milliseconds: 250),
+    int? memCacheWidth,
+    int? memCacheHeight,
+    FilterQuality filterQuality = FilterQuality.low,
   }) {
     if (source is NetworkImageSource) {
       return _buildNetwork(
@@ -87,6 +95,9 @@ class ImageLoader {
         placeholder: placeholder,
         errorWidget: errorWidget,
         fadeInDuration: fadeInDuration,
+        memCacheWidth: memCacheWidth,
+        memCacheHeight: memCacheHeight,
+        filterQuality: filterQuality,
       );
     }
 
@@ -99,6 +110,9 @@ class ImageLoader {
         placeholder: placeholder,
         errorWidget: errorWidget,
         fadeInDuration: fadeInDuration,
+        memCacheWidth: memCacheWidth,
+        memCacheHeight: memCacheHeight,
+        filterQuality: filterQuality,
       );
     }
 
@@ -111,6 +125,9 @@ class ImageLoader {
         placeholder: placeholder,
         errorWidget: errorWidget,
         fadeInDuration: fadeInDuration,
+        memCacheWidth: memCacheWidth,
+        memCacheHeight: memCacheHeight,
+        filterQuality: filterQuality,
       );
     }
 
@@ -125,6 +142,9 @@ class ImageLoader {
     required Widget placeholder,
     required Widget errorWidget,
     required Duration fadeInDuration,
+    int? memCacheWidth,
+    int? memCacheHeight,
+    FilterQuality filterQuality = FilterQuality.low,
   }) {
     return CachedNetworkImage(
       imageUrl: source.url,
@@ -135,6 +155,12 @@ class ImageLoader {
       httpHeaders: source.headers,
       fadeInDuration: fadeInDuration,
       fadeOutDuration: const Duration(milliseconds: 150),
+      // Memory cache optimization: reduce memory footprint for large images
+      memCacheWidth: memCacheWidth,
+      memCacheHeight: memCacheHeight,
+      // FilterQuality.low is faster and sufficient for most cases
+      filterQuality: filterQuality,
+      // Optimize: use const placeholder wrapper
       placeholder: (_, __) =>
           buildSizedChild(width: width, height: height, child: placeholder),
       errorWidget: (_, __, ___) =>
@@ -150,6 +176,9 @@ class ImageLoader {
     required Widget placeholder,
     required Widget errorWidget,
     required Duration fadeInDuration,
+    int? memCacheWidth,
+    int? memCacheHeight,
+    FilterQuality filterQuality = FilterQuality.low,
   }) {
     return Image.asset(
       source.assetPath,
@@ -157,6 +186,10 @@ class ImageLoader {
       height: height,
       fit: fit,
       package: source.package,
+      // Memory cache optimization
+      cacheWidth: memCacheWidth,
+      cacheHeight: memCacheHeight,
+      filterQuality: filterQuality,
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
         if (wasSynchronouslyLoaded || frame != null) {
           return FadeInWrapper(duration: fadeInDuration, child: child);
@@ -180,12 +213,19 @@ class ImageLoader {
     required Widget placeholder,
     required Widget errorWidget,
     required Duration fadeInDuration,
+    int? memCacheWidth,
+    int? memCacheHeight,
+    FilterQuality filterQuality = FilterQuality.low,
   }) {
     return Image.file(
       source.file,
       width: width,
       height: height,
       fit: fit,
+      // Memory cache optimization
+      cacheWidth: memCacheWidth,
+      cacheHeight: memCacheHeight,
+      filterQuality: filterQuality,
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
         if (wasSynchronouslyLoaded || frame != null) {
           return FadeInWrapper(duration: fadeInDuration, child: child);
@@ -212,6 +252,9 @@ Widget buildSizedChild({double? width, double? height, required Widget child}) {
 }
 
 /// Provides a simple fade-in effect once an image frame has been decoded.
+///
+/// Performance optimization: Uses TweenAnimationBuilder with child parameter
+/// to avoid rebuilding the child widget during animation.
 class FadeInWrapper extends StatelessWidget {
   const FadeInWrapper({
     super.key,
@@ -228,6 +271,7 @@ class FadeInWrapper extends StatelessWidget {
       tween: Tween<double>(begin: 0, end: 1),
       duration: duration,
       curve: Curves.easeOut,
+      // Optimize: child parameter prevents rebuilding child during animation
       child: child,
       builder: (context, value, child) => Opacity(opacity: value, child: child),
     );

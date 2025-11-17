@@ -4,7 +4,9 @@ import 'package:code_base_riverpod/core/theme/app_inset.dart';
 import 'package:code_base_riverpod/core/widgets/custom_gallery_widget/gallery_widget.dart';
 import 'package:code_base_riverpod/core/widgets/custom_gallery_widget/media_viewer.dart';
 import 'package:code_base_riverpod/core/widgets/custom_image_widget/custom_image_widget.dart';
+import 'package:code_base_riverpod/core/widgets/dropdown/custom_dropdown.dart';
 import 'package:code_base_riverpod/core/widgets/input/app_text_input_variant.dart';
+import 'package:code_base_riverpod/core/widgets/toast/toast_notification.dart';
 import 'package:code_base_riverpod/features/dashboard/presentation/widgets/dashboard_tile.dart';
 import 'package:code_base_riverpod/features/dashboard/presentation/widgets/custom_widget_section.dart';
 import 'package:code_base_riverpod/features/dashboard/presentation/widgets/widget_playground_panel.dart';
@@ -12,8 +14,67 @@ import 'package:code_base_riverpod/features/feature_and_screen_intro/presentatio
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  // Dropdown state
+  String? _selectedCountry;
+  String? _selectedLanguage;
+  List<String> _selectedCategories = [];
+
+  // Sample dropdown data
+  final List<DropdownItemData<String>> _countries = [
+    const DropdownItemData(
+      value: 'vn',
+      label: 'Vietnam',
+      subtitle: 'Asia',
+      icon: Icons.flag,
+    ),
+    const DropdownItemData(
+      value: 'us',
+      label: 'United States',
+      subtitle: 'North America',
+      icon: Icons.flag,
+    ),
+    const DropdownItemData(
+      value: 'jp',
+      label: 'Japan',
+      subtitle: 'Asia',
+      icon: Icons.flag,
+    ),
+  ];
+
+  final List<DropdownItemData<String>> _languages = [
+    const DropdownItemData(
+      value: 'vi',
+      label: 'Tiếng Việt',
+      icon: Icons.language,
+    ),
+    const DropdownItemData(value: 'en', label: 'English', icon: Icons.language),
+  ];
+
+  final List<DropdownItemData<String>> _categories = [
+    const DropdownItemData(
+      value: 'tech',
+      label: 'Technology',
+      icon: Icons.computer,
+    ),
+    const DropdownItemData(
+      value: 'design',
+      label: 'Design',
+      icon: Icons.palette,
+    ),
+    const DropdownItemData(
+      value: 'business',
+      label: 'Business',
+      icon: Icons.business,
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -291,6 +352,104 @@ class DashboardScreen extends StatelessWidget {
               ),
             ),
             AppInset.customGap(24),
+            Text('Toast Notifications', style: theme.textTheme.titleMedium),
+            AppInset.customGap(12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                FilledButton.icon(
+                  onPressed: () {
+                    ToastService.success(
+                      context,
+                      'Operation completed successfully!',
+                      title: 'Success',
+                    );
+                  },
+                  icon: const Icon(Icons.check_circle),
+                  label: const Text('Success'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: () {
+                    ToastService.error(
+                      context,
+                      'Failed to process request. Please try again.',
+                      title: 'Error',
+                    );
+                  },
+                  icon: const Icon(Icons.error),
+                  label: const Text('Error'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFEF4444),
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: () {
+                    ToastService.warning(
+                      context,
+                      'Your session will expire in 5 minutes.',
+                      title: 'Warning',
+                    );
+                  },
+                  icon: const Icon(Icons.warning),
+                  label: const Text('Warning'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFF59E0B),
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: () {
+                    ToastService.info(
+                      context,
+                      'New updates are available.',
+                      title: 'Information',
+                    );
+                  },
+                  icon: const Icon(Icons.info),
+                  label: const Text('Info'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF3B82F6),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    ToastService.success(
+                      context,
+                      'File uploaded successfully',
+                      action: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Action button clicked'),
+                          ),
+                        );
+                      },
+                      actionLabel: 'View',
+                    );
+                  },
+                  icon: const Icon(Icons.touch_app),
+                  label: const Text('With Action'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    ToastService.show(
+                      context,
+                      ToastConfig(
+                        message: 'This toast will stay for 10 seconds',
+                        type: ToastType.info,
+                        duration: const Duration(seconds: 10),
+                        position: ToastPosition.bottom,
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.timer),
+                  label: const Text('Long Duration'),
+                ),
+              ],
+            ),
+            AppInset.customGap(24),
             Text('Chips and badges', style: theme.textTheme.titleMedium),
             AppInset.customGap(12),
             Wrap(
@@ -327,6 +486,58 @@ class DashboardScreen extends StatelessWidget {
             ),
             AppInset.customGap(24),
             IntroAndFeatureDemo(),
+            AppInset.gapLarge,
+            Text('Custom Dropdown', style: theme.textTheme.titleMedium),
+            AppInset.customGap(12),
+            Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CustomDropdownButton<String>(
+                      items: _countries,
+                      selectedValue: _selectedCountry,
+                      onChanged: (value) =>
+                          setState(() => _selectedCountry = value),
+                      hint: 'Chọn quốc gia',
+                      label: 'Quốc gia',
+                      helperText: 'Chọn quốc gia của bạn',
+                    ),
+                    AppInset.gapLarge,
+                    CustomDropdownButton<String>(
+                      items: _languages,
+                      selectedValue: _selectedLanguage,
+                      onChanged: (value) =>
+                          setState(() => _selectedLanguage = value),
+                      hint: 'Chọn ngôn ngữ',
+                      label: 'Ngôn ngữ',
+                      config: const DropdownConfig(
+                        showSearchBar: true,
+                        searchHint: 'Tìm kiếm...',
+                      ),
+                    ),
+                    AppInset.gapLarge,
+                    CustomDropdownButton<String>(
+                      items: _categories,
+                      selectedValues: _selectedCategories,
+                      onMultiSelectChanged: (values) =>
+                          setState(() => _selectedCategories = values),
+                      hint: 'Chọn danh mục',
+                      label: 'Danh mục (Multi-select)',
+                      isMultiSelect: true,
+                      multiSelectConfig: const MultiSelectConfig(
+                        maxSelections: 3,
+                        showCounter: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             AppInset.gapLarge,
             Text('Cards', style: theme.textTheme.titleMedium),
             AppInset.customGap(12),

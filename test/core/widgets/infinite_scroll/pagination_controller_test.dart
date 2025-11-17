@@ -35,7 +35,6 @@ void main() {
       final controller = PaginationController<int>(
         autoStart: false,
         pageSize: 2,
-        keepPagesInMemory: 4,
         loadPage: ({required int page, required int pageSize}) async {
           return List.generate(
             pageSize,

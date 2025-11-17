@@ -28,8 +28,7 @@ class _FeatureIntroExampleState extends State<FeatureIntroExample> {
       ),
       FeatureIntroData(
         title: 'Search Feature',
-        description:
-            'Use the search to quickly find what you\'re looking for.',
+        description: 'Use the search to quickly find what you\'re looking for.',
         targetKey: _button2Key,
         icon: Icons.search,
         position: FeatureIntroPosition.bottom,
@@ -188,9 +187,7 @@ class _CustomFeatureIntroExampleState extends State<CustomFeatureIntroExample> {
               child: Container(
                 height: 200,
                 padding: const EdgeInsets.all(AppInset.large),
-                child: const Center(
-                  child: Text('Featured Card'),
-                ),
+                child: const Center(child: Text('Featured Card')),
               ),
             ),
             const SizedBox(height: AppInset.extraLarge),
@@ -240,7 +237,9 @@ class _AutoPlayFeatureIntroExampleState
     super.initState();
     // Auto-show feature intro after build
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showAutoPlayTour();
+      Future.delayed(const Duration(seconds: 1), () {
+        _showAutoPlayTour();
+      });
     });
   }
 
@@ -279,9 +278,7 @@ class _AutoPlayFeatureIntroExampleState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Auto-play Feature Intro'),
-      ),
+      appBar: AppBar(title: const Text('Auto-play Feature Intro')),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,

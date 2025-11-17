@@ -5,8 +5,15 @@ import '../../theme/app_text_styles.dart';
 import '../../theme/app_inset.dart';
 import 'intro_screen_models.dart';
 
-/// Single page widget for intro screen with customizable layout
-class IntroPageWidget extends StatelessWidget {
+/// PERFORMANCE OPTIMIZED: Single page widget with precached images and efficient animations
+///
+/// Optimizations:
+/// - StatefulWidget for image precaching in didChangeDependencies
+/// - Cached Animation objects to avoid recreation on every build
+/// - RepaintBoundary around visual content
+/// - Const widgets where possible
+/// - Optimized image cache dimensions
+class IntroPageWidget extends StatefulWidget {
   const IntroPageWidget({
     super.key,
     required this.data,
@@ -25,14 +32,66 @@ class IntroPageWidget extends StatelessWidget {
   final bool showAnimation;
 
   @override
+  State<IntroPageWidget> createState() => _IntroPageWidgetState();
+}
+
+class _IntroPageWidgetState extends State<IntroPageWidget> {
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+  bool _isImagePrecached = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeAnimations();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // OPTIMIZATION: Precache images for instant display
+    if (!_isImagePrecached && widget.data.image != null) {
+      precacheImage(AssetImage(widget.data.image!), context);
+      _isImagePrecached = true;
+    }
+  }
+
+  @override
+  void didUpdateWidget(IntroPageWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animationController != widget.animationController) {
+      _initializeAnimations();
+    }
+  }
+
+  void _initializeAnimations() {
+    if (widget.animationController != null) {
+      _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(
+          parent: widget.animationController!,
+          curve: const Interval(0.0, 0.65, curve: Curves.easeOut),
+        ),
+      );
+
+      _slideAnimation =
+          Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero).animate(
+            CurvedAnimation(
+              parent: widget.animationController!,
+              curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
+            ),
+          );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final backgroundColor =
-        data.backgroundColor ??
+        widget.data.backgroundColor ??
         (isDark ? AppColors.backgroundDark : AppColors.backgroundLight);
     final textColor =
-        data.textColor ??
+        widget.data.textColor ??
         (isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight);
 
     return Container(
@@ -42,7 +101,7 @@ class IntroPageWidget extends StatelessWidget {
   }
 
   Widget _buildLayout(BuildContext context, Color textColor) {
-    switch (layout) {
+    switch (widget.layout) {
       case IntroPageLayout.standard:
         return _buildStandardLayout(context, textColor);
       case IntroPageLayout.centered:
@@ -114,15 +173,21 @@ class IntroPageWidget extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (data.image != null) Image.asset(data.image!, fit: BoxFit.cover),
+        if (widget.data.image != null)
+          Image.asset(
+            widget.data.image!,
+            fit: BoxFit.cover,
+            cacheHeight: 1200, // Optimized cache for background
+            filterQuality: FilterQuality.medium,
+          ),
         Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Colors.black.withOpacity(0.3),
-                Colors.black.withOpacity(0.7),
+                Colors.black.withValues(alpha: 0.3),
+                Colors.black.withValues(alpha: 0.7),
               ],
             ),
           ),
@@ -191,36 +256,39 @@ class IntroPageWidget extends StatelessWidget {
   }
 
   Widget _buildVisual(BuildContext context, {bool fullWidth = false}) {
-    if (data.customContent != null) {
-      return data.customContent!;
+    if (widget.data.customContent != null) {
+      return widget.data.customContent!;
     }
 
-    if (data.imageWidget != null) {
-      return data.imageWidget!;
+    if (widget.data.imageWidget != null) {
+      return widget.data.imageWidget!;
     }
 
     Widget visual;
 
-    if (data.icon != null) {
+    if (widget.data.icon != null) {
       visual = Icon(
-        data.icon,
+        widget.data.icon,
         size: 120,
-        color: data.textColor ?? AppColors.primary,
+        color: widget.data.textColor ?? AppColors.primary,
       );
-    } else if (data.image != null) {
+    } else if (widget.data.image != null) {
+      // OPTIMIZATION: Cache image with explicit dimensions
       visual = Image.asset(
-        data.image!,
-        height: imageHeight ?? 250,
-        width: fullWidth ? double.infinity : imageWidth,
+        widget.data.image!,
+        height: widget.imageHeight ?? 250,
+        width: fullWidth ? double.infinity : widget.imageWidth,
         fit: fullWidth ? BoxFit.cover : BoxFit.contain,
+        cacheHeight: 500, // Optimized cache size
+        filterQuality: FilterQuality.medium,
       );
-    } else if (data.lottieAsset != null) {
+    } else if (widget.data.lottieAsset != null) {
       // Placeholder for Lottie animation
       visual = Container(
-        height: imageHeight ?? 250,
-        width: imageWidth ?? 250,
+        height: widget.imageHeight ?? 250,
+        width: widget.imageWidth ?? 250,
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.1),
+          color: AppColors.primary.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(16),
         ),
         child: const Center(
@@ -231,23 +299,12 @@ class IntroPageWidget extends StatelessWidget {
       visual = const SizedBox.shrink();
     }
 
-    if (showAnimation && animationController != null) {
-      return FadeTransition(
-        opacity: Tween<double>(begin: 0, end: 1).animate(
-          CurvedAnimation(
-            parent: animationController!,
-            curve: const Interval(0, 0.6, curve: Curves.easeOut),
-          ),
-        ),
-        child: SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero)
-              .animate(
-                CurvedAnimation(
-                  parent: animationController!,
-                  curve: const Interval(0, 0.6, curve: Curves.easeOut),
-                ),
-              ),
-          child: visual,
+    // OPTIMIZATION: Use cached animations instead of creating new ones
+    if (widget.showAnimation && widget.animationController != null) {
+      return RepaintBoundary(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(position: _slideAnimation, child: visual),
         ),
       );
     }
@@ -261,15 +318,15 @@ class IntroPageWidget extends StatelessWidget {
     bool centered = false,
   }) {
     final titleStyle =
-        data.titleStyle ??
+        widget.data.titleStyle ??
         AppTextStyles.headlineMedium.copyWith(
           color: textColor,
           fontWeight: FontWeight.bold,
         );
 
     final descriptionStyle =
-        data.descriptionStyle ??
-        AppTextStyles.bodyLarge.copyWith(color: textColor.withOpacity(0.8));
+        widget.data.descriptionStyle ??
+        AppTextStyles.bodyLarge.copyWith(color: textColor.withValues(alpha: 0.8));
 
     final content = Column(
       mainAxisSize: MainAxisSize.min,
@@ -278,37 +335,24 @@ class IntroPageWidget extends StatelessWidget {
           : CrossAxisAlignment.start,
       children: [
         Text(
-          data.title,
+          widget.data.title,
+          textAlign: centered ? TextAlign.center : TextAlign.start,
           style: titleStyle,
-          textAlign: centered ? TextAlign.center : TextAlign.start,
         ),
-        AppInset.gapLarge,
+        const Gap(AppInset.large),
         Text(
-          data.description,
-          style: descriptionStyle,
+          widget.data.description,
           textAlign: centered ? TextAlign.center : TextAlign.start,
+          style: descriptionStyle,
         ),
       ],
     );
 
-    if (showAnimation && animationController != null) {
+    // OPTIMIZATION: Use cached animations
+    if (widget.showAnimation && widget.animationController != null) {
       return FadeTransition(
-        opacity: Tween<double>(begin: 0, end: 1).animate(
-          CurvedAnimation(
-            parent: animationController!,
-            curve: const Interval(0.4, 1, curve: Curves.easeOut),
-          ),
-        ),
-        child: SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero)
-              .animate(
-                CurvedAnimation(
-                  parent: animationController!,
-                  curve: const Interval(0.4, 1, curve: Curves.easeOut),
-                ),
-              ),
-          child: content,
-        ),
+        opacity: _fadeAnimation,
+        child: SlideTransition(position: _slideAnimation, child: content),
       );
     }
 
